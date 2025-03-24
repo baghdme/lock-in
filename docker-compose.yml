@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  parser:
+    build: 
+      context: ./IEP1
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
