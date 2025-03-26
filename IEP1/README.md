@@ -1,6 +1,6 @@
-# Task Parser Service
+# IEP1 - Task Parser Service
 
-A Flask-based service that uses OpenAI's GPT-3.5 to parse natural language task descriptions into structured data. The service extracts tasks, meetings, course codes, and other relevant information from text input.
+A Flask-based service that uses OpenAI's GPT-3.5 to parse natural language task descriptions into structured data. Part of the Intelligent Educational Planner (IEP) project, this service (IEP1) extracts tasks, meetings, course codes, and other relevant information from text input.
 
 ## Features
 
@@ -115,22 +115,22 @@ GET /health
 ### Project Structure
 
 ```
-IEP1/
-├── parser.py           # Main parser implementation
-├── requirements.txt    # Python dependencies
-├── Dockerfile         # Docker configuration
+IEP1/                 # Root directory
+├── parser.py         # Main parser implementation
+├── requirements.txt  # Python dependencies
+├── Dockerfile       # Docker configuration
 ├── docker-compose.yml # Docker Compose configuration
-├── tests/            # Test suite
-└── test-interface/   # Web-based testing interface
+├── tests/          # Test suite
+└── test-interface/ # Web-based testing interface
 ```
 
-### Adding New Features
+### Adding New Features to IEP1
 
 1. Update the parser system message in `parser.py`
 2. Add corresponding test cases in `tests/test_parser.py`
 3. Update the test interface if needed
 
-## Contributing
+## Contributing to IEP1
 
 1. Fork the repository
 2. Create a feature branch
