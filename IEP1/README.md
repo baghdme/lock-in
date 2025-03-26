@@ -1,113 +1,139 @@
-# Task Parser (IEP1)
+# Task Parser Service
 
-A natural language task parser that extracts structured information from free-form text. It identifies tasks, meetings, course codes, priorities, and deadlines.
+A Flask-based service that uses OpenAI's GPT-3.5 to parse natural language task descriptions into structured data. The service extracts tasks, meetings, course codes, and other relevant information from text input.
 
 ## Features
 
-- Extracts tasks and meetings with their priorities and times
-- Identifies course codes (e.g., EECE503)
-- Categorizes tasks into different types (Shopping, Cleaning, Communication, etc.)
-- Performs topic analysis on tasks
-- Provides a beautiful web interface for testing
-- REST API endpoint for integration
+- Natural language task parsing
+- Automatic extraction of:
+  - Tasks with priorities and categories
+  - Meetings with locations and durations
+  - Course codes
+  - Time and duration information
+- RESTful API endpoint
+- Web-based testing interface
 
-## Prerequisites
+## Setup
+
+### Prerequisites
 
 - Docker and Docker Compose
-- Web browser (Chrome, Firefox, Safari, or Edge)
+- Python 3.11+
+- OpenAI API key
 
-## Quick Start
+### Environment Configuration
 
-1. Clone this directory or copy all files from IEP1
-2. Open a terminal in the IEP1 directory
-3. Run the parser service:
+1. Copy the example environment file:
    ```bash
-   docker-compose up --build
+   cp .env.example .env
    ```
-4. Wait for the service to start (you'll see "Running on http://0.0.0.0:5000")
-5. Open `test-interface/index.html` in your web browser
-6. Start parsing tasks!
 
-## Example Input
+2. Edit `.env` and add your OpenAI API key:
+   ```
+   OPENAI_API_KEY=your_api_key_here
+   ```
 
-Try entering text like:
+### Running with Docker
+
+1. Build and start the container:
+   ```bash
+   docker-compose up --build -d
+   ```
+
+2. The service will be available at:
+   - API: http://localhost:5000
+   - Test Interface: http://localhost:5000/test-interface
+
+### Running Tests
+
+Inside the Docker container:
+```bash
+docker exec iep1-parser-1 run-tests
 ```
-Need to finish EECE503 homework by tomorrow, attend team meeting at 3pm, 
-and review ML papers before EOD. Also need to clean my room and buy groceries.
-```
 
-## Project Structure
+## API Usage
 
-```
-IEP1/
-├── Dockerfile           # Docker configuration
-├── docker-compose.yml   # Docker Compose configuration
-├── parser.py           # Main parser implementation
-├── requirements.txt    # Python dependencies
-└── test-interface/    # Web interface for testing
-    └── index.html     # Beautiful UI for parser testing
-```
+### Parse Tasks Endpoint
 
-## API Endpoint
+```bash
+POST /parse-tasks
+Content-Type: application/json
 
-The parser exposes a REST API endpoint at:
-- POST `http://localhost:5000/parse-tasks`
-
-Request body:
-```json
 {
-    "text": "your text here"
+    "text": "Your task description here"
 }
 ```
 
-Response format:
+Example response:
 ```json
 {
     "tasks": [
         {
             "description": "task description",
-            "priority": "priority level",
-            "time": "deadline",
-            "category": "task category"
+            "priority": "high/medium/low",
+            "time": "HH:MM",
+            "duration_minutes": 60,
+            "category": "category",
+            "is_fixed_time": false,
+            "location": "location",
+            "prerequisites": [],
+            "course_code": "EECE503"
         }
     ],
-    "meetings": [
-        {
-            "description": "meeting description",
-            "priority": "priority level",
-            "time": "meeting time"
-        }
-    ],
-    "course_codes": ["EECE503"],
-    "topics": [
-        {
-            "id": 0,
-            "terms": {"term1": 0.8, "term2": 0.6},
-            "label": "Topic label"
-        }
-    ]
+    "meetings": [...],
+    "course_codes": [...],
+    "topics": [...]
 }
 ```
 
-## Troubleshooting
+### Health Check
 
-1. If the Docker container fails to start:
-   - Make sure ports 5000 is not in use
-   - Try running `docker-compose down` first
+```bash
+GET /health
+```
 
-2. If the web interface can't connect:
-   - Verify the Docker container is running
-   - Check browser console for CORS errors
-   - Make sure you're using http://localhost:5000
+## Time Format Requirements
 
-3. If dependencies fail to install:
-   - Try rebuilding with `docker-compose build --no-cache`
+- All times are in 24-hour format with leading zeros (HH:MM)
+- Examples:
+  - "9am" → "09:00"
+  - "2:30pm" → "14:30"
+  - "noon" → "12:00"
+  - "midnight" → "00:00"
 
-## Notes
+## Duration Format
 
-- This is a development server, not suitable for production use
-- The parser uses NLP techniques including:
-  - Named Entity Recognition
-  - Part-of-speech tagging
-  - Topic modeling
-  - Pattern matching 
+- All durations are converted to integer minutes
+- Examples:
+  - "1 hour" → 60
+  - "2.5 hours" → 150
+  - "45 mins" → 45
+  - "1 hour 30 mins" → 90
+
+## Development
+
+### Project Structure
+
+```
+IEP1/
+├── parser.py           # Main parser implementation
+├── requirements.txt    # Python dependencies
+├── Dockerfile         # Docker configuration
+├── docker-compose.yml # Docker Compose configuration
+├── tests/            # Test suite
+└── test-interface/   # Web-based testing interface
+```
+
+### Adding New Features
+
+1. Update the parser system message in `parser.py`
+2. Add corresponding test cases in `tests/test_parser.py`
+3. Update the test interface if needed
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request 
