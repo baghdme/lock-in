@@ -9,27 +9,26 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Set pip timeout and retries
-ENV PIP_DEFAULT_TIMEOUT=300
-ENV PIP_RETRIES=10
-
-# Copy requirements first to leverage Docker cache
+# Copy requirements first for better caching
 COPY requirements.txt .
-RUN pip install --upgrade pip
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install spacy model with retries
-RUN for i in {1..5}; do \
-        python -m spacy download en_core_web_sm && break || \
-        echo "Attempt $i failed! Trying again in 10 seconds..." && \
-        sleep 10; \
-    done
+# Copy the rest of the application
+COPY . .
 
-# Copy the application code
-COPY parser.py .
+# Set environment variables
+ENV FLASK_APP=parser.py
+ENV FLASK_ENV=development
+ENV PYTHONUNBUFFERED=1
 
-# Expose the port the app runs on
+# Expose port
 EXPOSE 5000
 
-# Command to run the application
-CMD ["python", "parser.py"] 
+# Add test command
+RUN echo '#!/bin/bash\npython -m pytest tests/ -v' > /usr/local/bin/run-tests && \
+    chmod +x /usr/local/bin/run-tests
+
+# Run the application with Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "parser:app"] 

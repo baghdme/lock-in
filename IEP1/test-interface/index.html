@@ -56,6 +56,11 @@
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fixed Time</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prerequisites</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Course</th>
                                 </tr>
                             </thead>
                             <tbody id="tasksBody" class="bg-white divide-y divide-gray-200"></tbody>
@@ -73,6 +78,10 @@
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preparation</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Course</th>
                                 </tr>
                             </thead>
                             <tbody id="meetingsBody" class="bg-white divide-y divide-gray-200"></tbody>
@@ -157,7 +166,12 @@
                     <td class="px-6 py-4 whitespace-normal">${task.description}</td>
                     <td class="px-6 py-4">${task.category}</td>
                     <td class="px-6 py-4">${task.priority}</td>
-                    <td class="px-6 py-4">${task.time}</td>
+                    <td class="px-6 py-4">${task.time || '-'}</td>
+                    <td class="px-6 py-4">${task.duration_minutes ? task.duration_minutes + ' mins' : '-'}</td>
+                    <td class="px-6 py-4">${task.location || '-'}</td>
+                    <td class="px-6 py-4">${task.is_fixed_time ? 'Yes' : 'No'}</td>
+                    <td class="px-6 py-4">${task.prerequisites.length ? task.prerequisites.join(', ') : '-'}</td>
+                    <td class="px-6 py-4">${task.course_code || '-'}</td>
                 </tr>
             `).join('');
 
@@ -168,6 +182,10 @@
                     <td class="px-6 py-4 whitespace-normal">${meeting.description}</td>
                     <td class="px-6 py-4">${meeting.priority}</td>
                     <td class="px-6 py-4">${meeting.time}</td>
+                    <td class="px-6 py-4">${meeting.duration_minutes ? meeting.duration_minutes + ' mins' : '-'}</td>
+                    <td class="px-6 py-4">${meeting.location || '-'}</td>
+                    <td class="px-6 py-4">${meeting.preparation_tasks.length ? meeting.preparation_tasks.join(', ') : '-'}</td>
+                    <td class="px-6 py-4">${meeting.course_code || '-'}</td>
                 </tr>
             `).join('');
 

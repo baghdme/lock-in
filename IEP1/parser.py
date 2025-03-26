@@ -1,395 +1,304 @@
-import re
-import nltk
 import json
-import spacy
+import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from typing import List, Dict, Tuple
-from gensim import corpora, models
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
+from typing import Dict
+import openai
 
-# Download required NLTK resources
-nltk.download('punkt')
-nltk.download('averaged_perceptron_tagger')
-nltk.download('stopwords')
-
-# Pre-defined categories with associated keywords
-CATEGORY_KEYWORDS = {
-    "Shopping": ["buy", "purchase", "shop", "order", "get", "groceries", "store"],
-    "Cleaning": ["clean", "tidy", "wash", "sweep", "scrub", "organize"],
-    "Communication": ["send", "email", "call", "talk", "discuss", "schedule", "contact"],
-    "Review": ["review", "check", "verify", "inspect", "study", "read"],
-    "Work": ["complete", "finish", "prepare", "submit", "work", "do", "make"],
-    "Errand": ["pick", "drop", "collect", "deliver", "grab", "get"]
-}
-
-class TaskParser:
-    def __init__(self):
-        """
-        Initialize TaskParser with regex patterns and keywords.
-        """
-        # Regex for detecting course codes (e.g., MATH201)
-        self.course_code_pattern = re.compile(r'\b[A-Z]{2,}\d+\b')
-        # Regex for detecting times (e.g., "10:00 AM", "14:30")
-        self.time_pattern = re.compile(r'\b(?:[01]?\d|2[0-3])(?::[0-5]\d)?(?:\s?(?:am|pm))?\b', re.IGNORECASE)
-        # Priority keywords
-        self.priority_keywords = {"urgent", "priority", "asap", "important", "critical", "super urgent", "super important"}
-        # Map special time phrases to normalized outputs
-        self.special_time_phrases = {
-            "eod": "By 11:59PM",
-            "end of day": "By 11:59PM",
-            "by eod": "By 11:59PM",
-            "by end of day": "By 11:59PM",
-            "sometime today": "Today",
-            "today": "Today",
-            "tomorrow": "Tomorrow",
-            "tonight": "Tonight"
-        }
-        # Meeting keywords (for meeting classification)
-        self.meeting_keywords = {"meeting", "webinar", "session", "sync"}
-        self.meeting_verbs = {"discuss", "meet", "sync"}
-        # Connectors for splitting compound sentences
-        self.compound_connectors = re.compile(r'\b(after that|then|and then|also|and)\b', re.IGNORECASE)
-        # List markers for splitting tasks
-        self.list_markers = re.compile(r'[,;]|\band\b|\balso\b|\bthen\b|\bor\b|\bplus\b', re.IGNORECASE)
-        # New patterns for task extraction
-        self.task_indicators = [
-            "has to", "should", "must", "needs to", "ought to", "need to", "have to",
-            "submit", "prepare", "review", "do", "make", "finish", "complete",
-            "buy", "get", "pick", "clean", "send", "call", "email"
-        ]
-        self.deadline_pattern = r'\b(?:by|before|at|around|about)\s+((?:(?:\d{1,2}\s*(?:am|pm))|noon|midday|midnight)(?:\s+\w+)?|tomorrow|today|tonight|next\s+\w+day|\w+day|end of day|early morning|late night)(?=\b|[\s\.,]|$)'
-        # Priority patterns including parentheses
-        self.priority_pattern = re.compile(r'(?:^|\(|\s)(urgent|priority|asap|important|critical|super urgent|super important)[\!\.\)]*', re.IGNORECASE)
-        # Load spaCy model locally for any additional text processing
-        self.nlp = spacy.load("en_core_web_sm")
-
-    def clean_text(self, text: str) -> str:
-        """
-        Lowercase, remove HTML tags, unwanted punctuation (but preserve .?!, - and :),
-        and collapse multiple spaces.
-        """
-        text = text.lower()
-        text = re.sub(r'<[^>]+>', '', text)
-        text = re.sub(r'[^a-z0-9\s\.\?!\-:,;\(\)]', '', text)
-        text = re.sub(r'\s+', ' ', text).strip()
-        return text
-
-    def split_into_fragments(self, text: str) -> List[str]:
-        """
-        Split text into fragments using multiple delimiters and patterns.
-        """
-        # First split by obvious delimiters
-        fragments = []
-        current = text
-        
-        # Split by list markers first
-        parts = self.list_markers.split(current)
-        for part in parts:
-            part = part.strip()
-            if not part:
-                continue
-                
-            # Further split by compound connectors if the part is long enough
-            if len(part.split()) > 5:
-                subparts = self.compound_connectors.split(part)
-                fragments.extend(sp.strip() for sp in subparts if sp.strip())
-            else:
-                fragments.append(part)
-        
-        return [f for f in fragments if f and not f.isspace()]
-
-    def extract_course_codes(self, text: str) -> List[str]:
-        """Extract course codes from text."""
-        codes = self.course_code_pattern.findall(text)
-        return list(set(codes))
-
-    def extract_time(self, sentence: str) -> str:
-        """
-        Extract time from the sentence.
-        Check special phrases first, then search with regex.
-        """
-        # Check for special time phrases
-        lower_sentence = sentence.lower()
-        for phrase, mapped in self.special_time_phrases.items():
-            if phrase in lower_sentence:
-                return mapped
-                
-        # Look for specific time patterns
-        match = self.time_pattern.search(sentence)
-        if match:
-            time = match.group().upper()
-            if 'pm' in time.lower() or 'am' in time.lower():
-                return time.replace(' ', '')
-            # If no AM/PM specified and hour is 1-11, assume PM for task times
-            try:
-                hour = int(time.split(':')[0] if ':' in time else time)
-                if 1 <= hour <= 11:
-                    return f"{time}PM"
-            except ValueError:
-                pass
-            return time
-            
-        return "not specified"
-
-    def extract_priority(self, sentence: str) -> str:
-        """
-        Extract priority from the sentence, including from parentheses.
-        """
-        match = self.priority_pattern.search(sentence)
-        if match:
-            priority = match.group(1)
-            return priority.title()
-        return "not specified"
-
-    def classify_fragment(self, fragment: str) -> str:
-        """
-        Classify the fragment as 'meeting' or 'task' using keyword matching.
-        More precise meeting detection to avoid false positives.
-        """
-        fragment_lower = fragment.lower()
-        words = set(word_tokenize(fragment_lower))
-        
-        # Check if this is explicitly about a meeting
-        if any(keyword in fragment_lower for keyword in self.meeting_keywords):
-            # Verify it's not just mentioning a meeting as context
-            if not any(phrase in fragment_lower for phrase in [
-                "before the meeting", "after the meeting", "for the meeting",
-                "prepare for meeting", "ready for meeting"
-            ]):
-                return "meeting"
-        
-        # Check for meeting verbs with subjects
-        if any(verb in words for verb in self.meeting_verbs):
-            doc = self.nlp(fragment_lower)
-            for token in doc:
-                if (token.dep_ == "nsubj" and 
-                    token.head.text in self.meeting_verbs and
-                    not any(w in fragment_lower for w in ["need to", "have to", "should"])):
-                    return "meeting"
-        
-        return "task"
-
-    def extract_relevant_meeting(self, fragment: str, course_codes: List[str]) -> str:
-        """
-        Extract meeting description from a fragment.
-        """
-        fragment = fragment.strip()
-        
-        # If it's a course-related meeting
-        for code in course_codes:
-            if code.lower() in fragment.lower():
-                # Try to extract more context
-                parts = fragment.lower().split(code.lower())
-                context = parts[1] if len(parts) > 1 else ""
-                context = context.strip(" ,.:")
-                return f"{code} Meeting" + (f": {context}" if context else "")
-        
-        # If it's about discussing something
-        if "to discuss" in fragment.lower():
-            parts = fragment.split("to discuss", 1)
-            subject = parts[1].strip(" ,.:")
-            if subject:
-                return f"Discussion: {subject}"
-        
-        # Extract the subject after meeting keywords
-        for keyword in self.meeting_keywords:
-            if keyword in fragment.lower():
-                parts = fragment.lower().split(keyword, 1)
-                if len(parts) > 1:
-                    subject = parts[1].strip(" ,.:")
-                    if subject:
-                        return f"Meeting: {subject}"
-        
-        # If we can't extract a good description, use the whole fragment
-        return fragment.strip(" ,.:")
-
-    def extract_relevant_task(self, fragment: str) -> str:
-        """
-        Extract task description from a fragment.
-        Removes filler phrases and normalizes the text.
-        """
-        # Remove common filler phrases
-        task = re.sub(r'^(i\s+)?(have|need|must|should|want)\s+(to\s+)?', '', fragment, flags=re.IGNORECASE)
-        task = re.sub(r'^(lets|let\'s|going\s+to|gonna|gotta)\s+', '', task, flags=re.IGNORECASE)
-        task = re.sub(r'^\s*(and|also|then)\s+', '', task, flags=re.IGNORECASE)
-        
-        # Remove trailing filler words
-        task = re.sub(r'\s+(?:right now|soon|at some point|when possible|if possible)$', '', task, flags=re.IGNORECASE)
-        
-        # Clean up any remaining artifacts
-        task = task.strip(' ,.!?:;')
-        
-        return task if task else fragment
-
-    def is_imperative(self, sentence: str) -> bool:
-        """Check if a sentence is likely an imperative sentence."""
-        tokens = word_tokenize(sentence)
-        if not tokens:
-            return False
-        tokens[0] = tokens[0].lower()
-        tagged = nltk.pos_tag(tokens)
-        return tagged[0][1] == 'VB'
-
-    def extract_deadline(self, sentence: str) -> str:
-        """Extract deadline information from the sentence."""
-        match = re.search(self.deadline_pattern, sentence, re.IGNORECASE)
-        return match.group(1) if match else None
-
-    def contains_task_indicators(self, sentence: str) -> bool:
-        """Check if the sentence contains task indicator phrases."""
-        sentence_lower = sentence.lower()
-        return any(indicator in sentence_lower for indicator in self.task_indicators)
-
-    def keyword_categorization(self, task_sentence: str) -> str:
-        """Categorize a task using keyword matching."""
-        tokens = [word.lower() for word in word_tokenize(task_sentence)]
-        category_counts = {}
-        for category, keywords in CATEGORY_KEYWORDS.items():
-            count = sum(token in keywords for token in tokens)
-            if count > 0:
-                category_counts[category] = count
-        return max(category_counts, key=category_counts.get) if category_counts else "General"
-
-    def lda_categorization(self, task_sentences: List[str], num_topics: int = 2) -> List[Dict[str, any]]:
-        """Apply LDA topic modeling to task sentences."""
-        if len(task_sentences) < 2:  # Reduced minimum tasks for topic modeling
-            return []
-            
-        # Process and clean the tasks
-        stop_words = set(stopwords.words('english'))
-        processed_tasks = []
-        for sentence in task_sentences:
-            # Keep only content words, remove stopwords
-            tokens = [word.lower() for word in word_tokenize(sentence) 
-                     if word.isalpha() and word.lower() not in stop_words]
-            if tokens:  # Only add if we have tokens after cleaning
-                processed_tasks.append(tokens)
-        
-        if not processed_tasks:
-            return []
-            
-        dictionary = corpora.Dictionary(processed_tasks)
-        corpus = [dictionary.doc2bow(text) for text in processed_tasks]
-        
-        # Only proceed if we have enough unique terms
-        if len(dictionary) < 4:  # Reduced minimum unique terms
-            return []
-        
-        lda_model = models.LdaModel(
-            corpus, 
-            num_topics=min(num_topics, len(processed_tasks)), 
-            id2word=dictionary,
-            passes=15,
-            random_state=42
-        )
-        
-        # Convert topics to a more useful format
-        topics = []
-        for topic_id in range(lda_model.num_topics):
-            topic_terms = dict(lda_model.show_topic(topic_id, topn=5))
-            # Convert numpy float32 to regular Python float
-            topic_terms = {k: float(v) for k, v in topic_terms.items()}
-            # Only include topics with reasonable term weights
-            if max(topic_terms.values()) > 0.1:
-                topics.append({
-                    "id": topic_id,
-                    "terms": topic_terms,
-                    "label": self._generate_topic_label(topic_terms)
-                })
-        
-        return topics
-    
-    def _generate_topic_label(self, topic_terms: Dict[str, float]) -> str:
-        """Generate a descriptive label for a topic based on its terms."""
-        # Sort terms by weight
-        sorted_terms = sorted(topic_terms.items(), key=lambda x: x[1], reverse=True)
-        main_terms = [term for term, _ in sorted_terms[:3]]
-        
-        # Try to match with predefined categories
-        for category, keywords in CATEGORY_KEYWORDS.items():
-            if any(term in keywords for term in main_terms):
-                return f"{category}-related tasks"
-        
-        # Default to a generic label using the top terms
-        return f"Tasks involving {', '.join(main_terms)}"
-
-    def parse(self, text: str) -> Dict[str, List[Dict[str, str]]]:
-        """
-        Parse text into structured meeting and task information with enhanced task extraction.
-        """
-        course_codes = self.extract_course_codes(text)
-        cleaned_text = self.clean_text(text)
-        fragments = self.split_into_fragments(cleaned_text)
-        
-        tasks = []
-        meetings = []
-        task_sentences = []
-        
-        for fragment in fragments:
-            # Skip empty or very short fragments
-            if not fragment or len(fragment.split()) < 2:
-                continue
-            
-            time_value = self.extract_time(fragment)
-            priority_value = self.extract_priority(fragment)
-            label = self.classify_fragment(fragment)
-            
-            if label == "meeting":
-                meeting_desc = self.extract_relevant_meeting(fragment, course_codes)
-                if meeting_desc and not meeting_desc.isspace():
-                    meetings.append({
-                        "description": meeting_desc,
-                        "priority": priority_value,
-                        "time": time_value
-                    })
-            else:
-                # Enhanced task extraction
-                if (self.is_imperative(fragment) or 
-                    self.contains_task_indicators(fragment) or 
-                    self.extract_deadline(fragment) or
-                    priority_value != "not specified"):
-                    
-                    task_desc = self.extract_relevant_task(fragment)
-                    if task_desc and not task_desc.isspace():
-                        deadline = self.extract_deadline(fragment)
-                        category = self.keyword_categorization(fragment)
-                        
-                        task_info = {
-                            "description": task_desc,
-                            "priority": priority_value,
-                            "time": time_value or deadline or "not specified",
-                            "category": category
-                        }
-                        tasks.append(task_info)
-                        task_sentences.append(fragment)
-        
-        # Apply LDA topic modeling to tasks
-        topics = self.lda_categorization(task_sentences)
-        
-        return {
-            "meetings": meetings,
-            "tasks": tasks,
-            "course_codes": course_codes,
-            "topics": topics
-        }
-
-# Flask app setup
+# Initialize Flask app and enable CORS
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app)
+
+# Configure OpenAI API key (ensure this is set in your environment)
+openai.api_key = os.getenv('OPENAI_API_KEY')
+
+def convert_to_24h(time_str: str) -> str:
+    """Convert 12-hour time format to 24-hour format."""
+    if not time_str or time_str == 'None' or time_str == 'null':
+        return None
+    
+    # Remove any whitespace and convert to lowercase
+    time_str = time_str.strip().lower()
+    
+    # Handle special cases
+    if time_str == "noon":
+        return "12:00"
+    if time_str == "midnight":
+        return "00:00"
+    
+    # Try to parse the time
+    try:
+        # Handle cases like "2pm", "2:30pm"
+        if "am" in time_str or "pm" in time_str:
+            # Remove am/pm and split into hours and minutes
+            time_parts = time_str.replace("am", "").replace("pm", "").strip().split(":")
+            
+            # Parse hours and minutes
+            hours = int(time_parts[0])
+            minutes = int(time_parts[1]) if len(time_parts) > 1 else 0
+            
+            # Convert to 24-hour format
+            if "pm" in time_str.lower() and hours != 12:
+                hours += 12
+            elif "am" in time_str.lower() and hours == 12:
+                hours = 0
+            
+            # Return formatted time
+            return f"{hours:02d}:{minutes:02d}"
+        
+        # Handle cases where time is just a number (assume it's hours)
+        if time_str.isdigit():
+            hours = int(time_str)
+            return f"{hours:02d}:00"
+        
+        # If already in 24-hour format or no am/pm specified
+        if ":" in time_str:
+            hours, minutes = map(int, time_str.split(":"))
+            return f"{hours:02d}:{minutes:02d}"
+        
+        return time_str
+    except Exception:
+        return time_str  # Return original if parsing fails
+
+def validate_and_fix_times(data: Dict) -> Dict:
+    """Validate and fix time formats in the parsed data."""
+    # Fix task times
+    for task in data.get("tasks", []):
+        if task.get("time"):
+            task["time"] = convert_to_24h(task["time"])
+    
+    # Fix meeting times
+    for meeting in data.get("meetings", []):
+        if meeting.get("time"):
+            meeting["time"] = convert_to_24h(meeting["time"])
+    
+    return data
+
+def parse_with_llm(text: str) -> Dict:
+    """
+    Parse text using OpenAI's GPT-3.5-turbo model.
+    This function sends a prompt instructing GPT-3.5 to extract structured task/meeting data.
+    The expected JSON output has this structure:
+    {
+        "tasks": [
+            {
+                "description": "task description",
+                "priority": "high/medium/low",
+                "time": "HH:MM or None",  # 24-hour format with leading zeros
+                "duration_minutes": None,  # Integer minutes, None if not specified
+                "category": "meaningful category",
+                "is_fixed_time": false,
+                "location": "location if specified or None",
+                "prerequisites": ["list of prerequisite task descriptions"],
+                "course_code": "associated course code or None"
+            }
+        ],
+        "meetings": [
+            {
+                "description": "meeting description",
+                "priority": "high/medium/low",
+                "time": "HH:MM",  # 24-hour format with leading zeros
+                "duration_minutes": None,  # Integer minutes, None if not specified
+                "location": "meeting location or None",
+                "preparation_tasks": ["list of prep task descriptions"],
+                "course_code": "associated course code or None"
+            }
+        ],
+        "course_codes": ["list of course codes"],
+        "topics": [
+            {
+                "id": 0,
+                "terms": {"term1": 0.8, "term2": 0.6},
+                "label": "Topic label"
+            }
+        ]
+    }
+    Output only the JSON object, nothing else.
+    """
+    prompt = f"""You are a task parsing assistant for a daily scheduling system. Parse the following text into structured information following these rules:
+
+1. Task and Meeting Structure:
+   - Extract tasks that need to be done today
+   - Identify meetings with specific times
+   - Extract duration information ONLY when explicitly mentioned
+   - Convert ALL durations to integer minutes (e.g., "1 hour" → 60, "2.5 hours" → 150)
+   - Note location information, especially for meetings
+   - Identify dependencies between tasks when mentioned
+
+2. Time Format Requirements (STRICT):
+   - ALL times MUST be in 24-hour format with leading zeros
+   - Format: "HH:MM" (e.g., "09:00", "14:30", "16:45")
+   - Examples of conversion:
+     * "9am" → "09:00"
+     * "2:30pm" → "14:30"
+     * "3:45pm" → "15:45"
+     * "11:30am" → "11:30"
+     * "12pm" → "12:00"
+     * "12am" → "00:00"
+
+3. Duration Requirements (STRICT):
+   - ALL durations MUST be in integer minutes
+   - Examples of conversion:
+     * "1 hour" → 60
+     * "2.5 hours" → 150
+     * "45 mins" → 45
+     * "1h" → 60
+     * "1 hour 30 mins" → 90
+     * "2 hours" → 120
+
+4. Course Code Handling:
+   - Extract full codes (e.g., EECE503) and shortened versions (503)
+   - Handle variations (EECE503N, 503n)
+   - Associate tasks and meetings with relevant courses
+
+5. Priority and Categories:
+   - High: Urgent/critical tasks, must be done today
+   - Medium: Important but some flexibility
+   - Low: Can be postponed if needed
+   - Use categories: Lab Work, Assignment, Tutorial, Admin, Grading, Preparation
+
+6. Additional Context:
+   - Note any prerequisites or dependencies
+   - Capture location details for travel planning
+   - Note preparation requirements for meetings
+   - Group related tasks together
+
+Text to parse: "{text}"
+
+Output a JSON object with this exact structure:
+{{
+    "tasks": [
+        {{
+            "description": "task description",
+            "priority": "high/medium/low",
+            "time": "HH:MM or None",  # 24-hour format with leading zeros
+            "duration_minutes": 60,  # Integer minutes, None if not specified
+            "category": "meaningful category",
+            "is_fixed_time": false,
+            "location": "location if specified or None",
+            "prerequisites": ["list of prerequisite task descriptions"],
+            "course_code": "associated course code or None"
+        }}
+    ],
+    "meetings": [
+        {{
+            "description": "meeting description",
+            "priority": "high/medium/low",
+            "time": "HH:MM",  # 24-hour format with leading zeros
+            "duration_minutes": 60,  # Integer minutes, None if not specified
+            "location": "meeting location or None",
+            "preparation_tasks": ["list of prep task descriptions"],
+            "course_code": "associated course code or None"
+        }}
+    ],
+    "course_codes": ["list of course codes"],
+    "topics": [
+        {{
+            "id": 0,
+            "terms": {{"term1": 0.8, "term2": 0.6}},
+            "label": "Topic label"
+        }}
+    ]
+}}
+
+IMPORTANT: ALL times MUST be in 24-hour format (HH:MM) and ALL durations MUST be in integer minutes.
+Output only the JSON object, nothing else."""
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo-1106",
+            messages=[
+                {"role": "system", "content": """You are a task parsing assistant that outputs only valid JSON.
+STRICT FORMAT REQUIREMENTS:
+1. Times must be in 24-hour format with leading zeros (HH:MM)
+   - "9am" → "09:00"
+   - "2:30pm" → "14:30"
+   - "4pm" → "16:00"
+   - "12pm" → "12:00"
+   - "12am" → "00:00"
+2. Durations must be integer minutes
+   - "1 hour" → 60
+   - "2.5 hours" → 150
+   - "45 mins" → 45
+   - "1h" → 60
+Never output times in 12-hour format (no am/pm). Always use 24-hour format with leading zeros."""},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            response_format={"type": "json_object"}
+        )
+        # Parse and validate the JSON content from the response
+        result = json.loads(response.choices[0].message['content'])
+        result = validate_and_fix_times(result)  # Convert times to 24-hour format
+        return result
+    except openai.error.OpenAIError as e:
+        return {
+            "error": f"OpenAI API Error: {str(e)}",
+            "tasks": [],
+            "meetings": [],
+            "course_codes": [],
+            "topics": []
+        }
+    except json.JSONDecodeError as e:
+        return {
+            "error": f"JSON Decode Error: {str(e)}",
+            "tasks": [],
+            "meetings": [],
+            "course_codes": [],
+            "topics": []
+        }
+    except Exception as e:
+        return {
+            "error": f"Unexpected error: {str(e)}",
+            "tasks": [],
+            "meetings": [],
+            "course_codes": [],
+            "topics": []
+        }
 
 @app.route('/parse-tasks', methods=['POST'])
 def parse_tasks_endpoint():
+    if not os.getenv('OPENAI_API_KEY'):
+        return jsonify({
+            "error": "OPENAI_API_KEY environment variable not set",
+            "status": "configuration_error"
+        }), 500
     data = request.get_json()
     text = data.get('text', '')
-    parser = TaskParser()
-    result = parser.parse(text)
+    if not text:
+        return jsonify({
+            "error": "No text provided",
+            "status": "invalid_request"
+        }), 400
+    result = parse_with_llm(text)
+    if "error" in result:
+        return jsonify({
+            **result,
+            "status": "processing_error"
+        }), 500
     return jsonify(result), 200, {'Content-Type': 'application/json; charset=utf-8'}
 
 @app.route('/health', methods=['GET'])
 def health_endpoint():
-    return jsonify({"status": "healthy"}), 200
+    if not os.getenv('OPENAI_API_KEY'):
+        return jsonify({
+            "status": "unhealthy",
+            "error": "OPENAI_API_KEY environment variable not set"
+        }), 500
+    try:
+        # Test OpenAI connection by listing available models
+        openai.Model.list()
+        return jsonify({
+            "status": "healthy",
+            "model": "gpt-3.5-turbo-1106",
+            "openai_status": "connected"
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "status": "unhealthy",
+            "error": f"OpenAI connection error: {str(e)}",
+            "openai_status": "disconnected"
+        }), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=True)
