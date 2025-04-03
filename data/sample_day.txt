@@ -1,0 +1,16 @@
+Monday:
+- EECE503N exam at 2:00 PM, need to study in the morning
+- Team meeting at 10:00 AM to discuss project progress
+- Work on the Lock-in project implementation from 3:30 PM to 5:00 PM
+- Review ML concepts at night
+
+Tuesday:
+- EECE437 lecture from 9:30 AM to 10:45 AM
+- Group study session at 11:00 AM
+- Submit assignment by 4:00 PM
+- Evening workout at 6:00 PM
+
+Wednesday:
+- Morning standup at 9:00 AM
+- Code review at 2:00 PM
+- Project presentation preparation from 3:00 PM to 5:00 PM

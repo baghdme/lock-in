@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - alert_rules.yml
+
+scrape_configs:
+  - job_name: 'ui'
+    static_configs:
+      - targets: ['ui:3000']
+
+  - job_name: 'eep1'
+    static_configs:
+      - targets: ['eep1:5000']
+
+  - job_name: 'iep1'
+    static_configs:
+      - targets: ['iep1:5001']
+
+  - job_name: 'iep2'
+    static_configs:
+      - targets: ['iep2:5002']
+
+  - job_name: 'iep-calendar-sync'
+    static_configs:
+      - targets: ['iep-calendar-sync:5003']

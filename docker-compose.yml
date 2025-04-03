@@ -1,17 +1,73 @@
 version: '3.8'
 
 services:
-  parser:
-    build: 
-      context: ./IEP1
-      dockerfile: Dockerfile
+  ui:
+    build:
+      context: ./UI
+      dockerfile: Dockerfile.UI
+    ports:
+      - "3000:3000"
+    environment:
+      - EEP1_URL=http://eep1:5000
+    depends_on:
+      - eep1
+
+  eep1:
+    build:
+      context: ./EEP1
+      dockerfile: Dockerfile.eep1
     ports:
       - "5000:5000"
-    env_file:
-      - .env
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
+    environment:
+      - IEP1_URL=http://iep1:5001
+      - IEP2_URL=http://iep2:5002
+      - CALENDAR_SYNC_URL=http://iep-calendar-sync:5003
+    depends_on:
+      - iep1
+      - iep2
+      - iep-calendar-sync
+
+  iep1:
+    build:
+      context: ./IEP1
+      dockerfile: Dockerfile.iep1
+    ports:
+      - "5001:5000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./data:/app/data
+
+  iep2:
+    build:
+      context: ./IEP2
+      dockerfile: Dockerfile.iep2
+    ports:
+      - "5002:5000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
+  iep-calendar-sync:
+    build:
+      context: ./IEP_CalendarSync
+      dockerfile: Dockerfile.calendar
+    ports:
+      - "5003:5000"
+    environment:
+      - GOOGLE_CALENDAR_API_KEY=${GOOGLE_CALENDAR_API_KEY}
+      - OUTLOOK_API_KEY=${OUTLOOK_API_KEY}
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
