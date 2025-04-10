@@ -6,27 +6,23 @@ A microservices-based application that helps students manage their academic sche
 
 The application consists of the following microservices:
 
-- **UI**: User interface for interacting with the system
-- **EEP1**: Schedule Generator API (endpoints: /parse-tasks, /compile-schedule, /sync-calendar)
-- **IEP1**: Task Parser and Modification Processor
-- **IEP2**: Schedule Compiler and Prioritizer
-- **Calendar Sync**: External Calendar System Integration
+- **UI**: React-based user interface for interacting with the system
+- **EEP1**: Schedule Generator API (endpoints: /parse-schedule, /get-schedule)
+- **IEP1**: OpenAI Model Gateway
+- **IEP2**: Schedule Optimizer
+- **Auth Service**: User authentication and authorization
 
 ## Prerequisites
 
 - Docker and Docker Compose
 - OpenAI API Key
-- Google Calendar API Key (optional)
-- Outlook API Key (optional)
 
 ## Setup
 
 1. Clone the repository
-2. Create a `.env` file with the required API keys:
+2. Create a `.env` file with the required API key:
    ```
    OPENAI_API_KEY=your_openai_api_key
-   GOOGLE_CALENDAR_API_KEY=your_google_calendar_api_key
-   OUTLOOK_API_KEY=your_outlook_api_key
    ```
 3. Build and run the services:
    ```bash
@@ -36,49 +32,67 @@ The application consists of the following microservices:
 ## Services
 
 ### UI (Port 3000)
-The main user interface for interacting with the system.
+React-based user interface that provides:
+- User authentication (login/register)
+- Schedule management dashboard
+- Task and meeting visualization
+- Schedule modification interface
 
 ### EEP1 (Port 5000)
 Schedule Generator API with endpoints:
-- `/parse-tasks`: Parse free-form text into structured tasks
-- `/compile-schedule`: Generate optimized schedules
-- `/sync-calendar`: Sync with external calendars
+- `/parse-schedule`: Parse free-form text into structured schedule
+- `/get-schedule`: Retrieve the latest stored schedule
+- Handles all business logic for schedule management
+- Maintains schedule state in local storage
 
 ### IEP1 (Port 5001)
-Task Parser service that:
-- Extracts tasks, meetings, and course codes
-- Processes modification prompts
-- Maintains the latest schedule state
+OpenAI Model Gateway that:
+- Provides a simple interface to OpenAI API
+- Handles model calls and responses
+- No business logic, only model interaction
 
 ### IEP2 (Port 5002)
-Schedule Compiler that:
-- Generates optimized, time-ordered schedules
-- Incorporates MCQ feedback
-- Handles schedule modifications
+Schedule Optimizer that:
+- Optimizes task scheduling
+- Handles task prioritization
+- Manages schedule constraints
 
-### Calendar Sync (Port 5003)
-Handles synchronization with external calendar systems:
-- Google Calendar
-- Outlook Calendar
-- iCloud Calendar
+### Auth Service (Port 3002)
+Authentication service that:
+- Handles user registration and login
+- Manages JWT tokens
+- Provides protected routes
 
-### Monitoring
-- Prometheus (Port 9090)
-- Grafana (Port 3001)
+## Project Structure
 
-## Testing
-
-Each service includes its own test suite. Run tests for individual services:
-
-```bash
-# For IEP1
-cd IEP1 && python -m pytest tests/
-
-# For IEP2
-cd IEP2 && python -m pytest tests/
-
-# For Calendar Sync
-cd CalendarSync && python -m pytest tests/
+```
+lock-in/
+├── EEP1/                 # Schedule Generator API
+│   ├── app.py           # Main application
+│   ├── Dockerfile.eep1  # Docker configuration
+│   └── requirements.txt # Python dependencies
+├── IEP1/                # OpenAI Model Gateway
+│   ├── parser.py        # Model interface
+│   ├── Dockerfile.iep1  # Docker configuration
+│   └── requirements.txt # Python dependencies
+├── IEP2/                # Schedule Optimizer
+│   ├── app.py           # Main application
+│   ├── optimizer.py     # Optimization logic
+│   ├── scheduler.py     # Scheduling logic
+│   ├── Dockerfile.iep2  # Docker configuration
+│   └── requirements.txt # Python dependencies
+├── UI/                  # React Frontend
+│   ├── src/             # Source code
+│   │   ├── components/  # React components
+│   │   └── App.js       # Main application
+│   ├── Dockerfile.ui    # Docker configuration
+│   └── package.json     # Node dependencies
+├── auth-service/        # Authentication Service
+│   ├── server.js        # Main application
+│   ├── Dockerfile.auth  # Docker configuration
+│   └── package.json     # Node dependencies
+├── docker-compose.yml   # Service orchestration
+└── README.md            # Project documentation
 ```
 
 ## Contributing
