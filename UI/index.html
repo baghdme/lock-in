@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .auth-form, .schedule-form {
+            margin-bottom: 20px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .hidden {
+            display: none;
+        }
+        #schedule-result {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Authentication Form -->
+        <div id="auth-section">
+            <div class="auth-form">
+                <h2>Sign In</h2>
+                <div class="form-group">
+                    <label for="email">Email:</label>
+                    <input type="email" id="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password:</label>
+                    <input type="password" id="password" required>
+                </div>
+                <button onclick="signIn()">Sign In</button>
+                <button onclick="showSignUp()">Sign Up</button>
+            </div>
+
+            <div class="auth-form hidden" id="signup-form">
+                <h2>Sign Up</h2>
+                <div class="form-group">
+                    <label for="signup-email">Email:</label>
+                    <input type="email" id="signup-email" required>
+                </div>
+                <div class="form-group">
+                    <label for="signup-password">Password:</label>
+                    <input type="password" id="signup-password" required>
+                </div>
+                <div class="form-group">
+                    <label for="confirm-password">Confirm Password:</label>
+                    <input type="password" id="confirm-password" required>
+                </div>
+                <button onclick="signUp()">Create Account</button>
+                <button onclick="showSignIn()">Back to Sign In</button>
+            </div>
+        </div>
+
+        <!-- Schedule Generator Form -->
+        <div id="schedule-section" class="hidden">
+            <div class="schedule-form">
+                <h2>Schedule Generator</h2>
+                <div class="form-group">
+                    <label for="schedule-text">Describe your schedule:</label>
+                    <textarea id="schedule-text" rows="5" placeholder="e.g., I have EECE503N exam on Thursday at 2:00 PM and need to study for it on Wednesday evening..."></textarea>
+                </div>
+                <button onclick="generateSchedule()">Generate Schedule</button>
+                <button onclick="modifySchedule()">Modify Schedule</button>
+            </div>
+            <div id="schedule-result"></div>
+        </div>
+    </div>
+
+    <script>
+        // Authentication functions
+        function showSignUp() {
+            document.querySelector('.auth-form').classList.add('hidden');
+            document.getElementById('signup-form').classList.remove('hidden');
+        }
+
+        function showSignIn() {
+            document.querySelector('.auth-form').classList.remove('hidden');
+            document.getElementById('signup-form').classList.add('hidden');
+        }
+
+        function signIn() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            // TODO: Implement actual authentication
+            if (email && password) {
+                document.getElementById('auth-section').classList.add('hidden');
+                document.getElementById('schedule-section').classList.remove('hidden');
+            }
+        }
+
+        function signUp() {
+            const email = document.getElementById('signup-email').value;
+            const password = document.getElementById('signup-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            
+            if (password !== confirmPassword) {
+                alert('Passwords do not match!');
+                return;
+            }
+            
+            // TODO: Implement actual signup
+            if (email && password) {
+                showSignIn();
+            }
+        }
+
+        // Schedule functions
+        function generateSchedule() {
+            const text = document.getElementById('schedule-text').value;
+            if (!text) {
+                alert('Please enter schedule description');
+                return;
+            }
+
+            fetch('/api/parse-schedule', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text: text })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('schedule-result').innerHTML = 
+                    `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error generating schedule');
+            });
+        }
+
+        function modifySchedule() {
+            const text = document.getElementById('schedule-text').value;
+            if (!text) {
+                alert('Please enter schedule modification');
+                return;
+            }
+
+            fetch('/api/modify-schedule', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text: text })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('schedule-result').innerHTML = 
+                    `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error modifying schedule');
+            });
+        }
+    </script>
+</body>
+</html> 
