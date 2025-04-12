@@ -4,9 +4,12 @@ services:
   ui:
     build:
       context: ./UI
-      dockerfile: Dockerfile.ui
+      dockerfile: Dockerfile
     ports:
-      - "3002:3000"
+      - "5002:5002"
+    environment:
+      - EEP1_URL=http://eep1:5000
+      - AUTH_SERVICE_URL=http://auth-service:5004
     depends_on:
       - eep1
       - auth-service
@@ -16,15 +19,14 @@ services:
   eep1:
     build:
       context: ./EEP1
-      dockerfile: Dockerfile.eep1
+      dockerfile: Dockerfile
     ports:
       - "5000:5000"
     environment:
       - IEP1_URL=http://iep1:5001
-    env_file:
-      - ./IEP1/.env
+      - STORAGE_DIR=/app/data
     volumes:
-      - ./EEP1/storage:/app/storage
+      - ./EEP1/data:/app/data
     depends_on:
       - iep1
     networks:
@@ -33,24 +35,24 @@ services:
   iep1:
     build:
       context: ./IEP1
-      dockerfile: Dockerfile.iep1
+      dockerfile: Dockerfile
     ports:
       - "5001:5001"
-    env_file:
-      - ./IEP1/.env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
-      - schedule_storage:/app/storage
+      - ./IEP1/data:/app/data
     networks:
       - app-network
 
   auth-service:
     build:
       context: ./auth-service
-      dockerfile: Dockerfile.auth
+      dockerfile: Dockerfile
     ports:
       - "5004:5004"
     environment:
-      - MONGODB_URI=mongodb://mongo:27017/lock-in-scheduler
+      - MONGODB_URI=mongodb://mongo:27017/
       - JWT_SECRET=${JWT_SECRET}
     depends_on:
       - mongo

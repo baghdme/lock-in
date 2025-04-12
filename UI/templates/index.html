@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Schedule Generator</h1>
+        
+        <div class="input-section">
+            <h2>Enter Schedule Details</h2>
+            <textarea id="scheduleText" placeholder="Enter your schedule details here..."></textarea>
+            <button onclick="generateSchedule()">Generate Schedule</button>
+        </div>
+
+        <div class="modify-section">
+            <h2>Modify Schedule</h2>
+            <textarea id="modifyText" placeholder="Enter modifications here..."></textarea>
+            <button onclick="modifySchedule()">Update Schedule</button>
+        </div>
+
+        <div class="schedule-display">
+            <h2>Current Schedule</h2>
+            <div id="scheduleOutput"></div>
+        </div>
+    </div>
+
+    <!-- Question Dialog -->
+    <div id="questionDialog" class="dialog hidden">
+        <div class="dialog-content">
+            <h2>Missing Information</h2>
+            <div id="questionText"></div>
+            <div id="questionInput"></div>
+            <div class="dialog-buttons">
+                <button onclick="submitAnswer()">Submit</button>
+                <button onclick="closeDialog()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html> 

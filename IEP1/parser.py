@@ -3,6 +3,12 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import openai
 from dotenv import load_dotenv
+import logging
+import json
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -12,29 +18,54 @@ CORS(app)
 
 # Configure OpenAI API key
 openai.api_key = os.getenv('OPENAI_API_KEY')
+logger.debug("OpenAI API key configured")
 
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
         data = request.json
+        logger.debug(f"Received data: {data}")
+        
         if not data or 'prompt' not in data:
+            logger.error("Missing prompt parameter in request")
             return jsonify({"error": "Missing prompt parameter"}), 400
             
         # Call OpenAI API
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that outputs only valid JSON."},
-                {"role": "user", "content": data['prompt']}
-            ],
-            temperature=0.7,
-            max_tokens=2000
-        )
-        
-        # Return the raw response from OpenAI
-        return jsonify(response.choices[0].message.content)
+        logger.debug("Calling OpenAI API...")
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant that outputs only valid JSON."},
+                    {"role": "user", "content": data['prompt']}
+                ],
+                temperature=0.7,
+                max_tokens=2000
+            )
+            logger.debug(f"OpenAI response: {response}")
+            
+            if not response.choices or len(response.choices) == 0:
+                logger.error("No choices in OpenAI response")
+                return jsonify({"error": "No response from OpenAI"}), 500
+                
+            # Return the raw response from OpenAI
+            content = response.choices[0].message.content
+            logger.debug(f"Response content: {content}")
+            
+            # Try to parse the content as JSON to validate it
+            try:
+                json.loads(content)
+            except json.JSONDecodeError:
+                logger.warning("OpenAI response is not valid JSON, returning as is")
+                
+            return jsonify(content)
+            
+        except openai.error.OpenAIError as e:
+            logger.error(f"OpenAI API error: {str(e)}")
+            return jsonify({"error": f"OpenAI API error: {str(e)}"}), 500
             
     except Exception as e:
+        logger.error(f"Error in predict route: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 @app.route('/health', methods=['GET'])

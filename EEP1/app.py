@@ -6,6 +6,13 @@ from dotenv import load_dotenv
 import json
 from datetime import datetime, timedelta
 from copy import deepcopy
+import logging
+from prompts import PARSING_PROMPT, MODIFY_PROMPT
+import uuid
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -14,116 +21,43 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Service URLs
-IEP1_URL = os.getenv('IEP1_URL', 'http://iep1:5001')
+IEP1_URL = os.getenv('IEP1_URL', 'http://localhost:5001')
+logger.debug(f"Using IEP1_URL: {IEP1_URL}")
 
 # Storage configuration
 STORAGE_PATH = os.path.join(os.path.dirname(__file__), 'storage', 'latest_schedule.json')
 os.makedirs(os.path.dirname(STORAGE_PATH), exist_ok=True)
 
-# Prompt templates
-PARSING_PROMPT = """You are a task parsing assistant for a weekly scheduling system. Parse the following weekly overview text into structured information following these rules:
-
-1. Input Understanding:
-   - The user provides descriptions of events and their related tasks
-   - Events can be: exams, meetings, presentations, project deadlines, interviews, etc.
-   - For each main event, identify if preparation is needed but DO NOT schedule specific prep times
-   - Examples:
-       "I have an exam on Thursday at 14:00" -> Just note that exam prep is needed
-       "Team presentation next Monday at 10:00 AM" -> Just note that presentation prep is needed
-
-2. Event Classification:
-   - Main Events (treated as meetings):
-     * Exams: Flag that preparation is needed
-     * Presentations: Flag that preparation is needed
-     * Project deadlines: Flag that work sessions are needed
-     * Team meetings: Flag if preparation is mentioned
-   
-   - Preparation Needs:
-     * Exams: Add a general "prepare for exam" task
-     * Presentations: Add a general "prepare presentation" task
-     * Projects: Add a general "work on project" task
-     * Meetings: Add prep task only if explicitly mentioned
-
-3. Task Creation Rules:
-   - For each main event:
-     * Create the event in meetings array with exact time
-     * Add a general preparation task if needed
-     * DO NOT specify study times or session durations
-     * Let the schedule generator handle when and how long to study
-
-4. Priority and Linking Rules:
-   - ALL exam-related events and tasks are high priority
-   - ALL presentation-related events and tasks are high priority
-   - Link tasks to their main event using related_event
-   - Use consistent descriptions
-   - Inherit course codes from main events to tasks
-
-Output a JSON object with this structure:
-{
-    "tasks": [
-        {
-            "description": "task description",
-            "day": "day of week or date",
-            "priority": "high/medium/low",
-            "time": null,
-            "duration_minutes": null,
-            "category": "study/preparation/research/project_work/follow_up",
-            "is_fixed_time": false,
-            "location": "location if specified or None",
-            "prerequisites": ["list of prerequisite task descriptions"],
-            "course_code": "associated course code or None",
-            "related_event": "description of the main event this task is for"
-        }
-    ],
-    "meetings": [
-        {
-            "description": "meeting description",
-            "day": "day of week or date",
-            "priority": "high/medium/low",
-            "time": "HH:MM",
-            "duration_minutes": null,
-            "type": "exam/presentation/interview/project_deadline/regular",
-            "location": "meeting location or None",
-            "preparation_tasks": ["list of required prep task descriptions"],
-            "course_code": "associated course code or None"
-        }
-    ],
-    "course_codes": ["list of course codes"],
-    "topics": []
-}
-
-IMPORTANT VALIDATION RULES: 
-1. For exams:
-   - Add ONE general preparation task without specific times
-   - Let schedule generator handle study sessions
-   - Course code must be consistent across items
-
-2. For presentations:
-   - Add ONE general preparation task without specific times
-   - Let schedule generator handle prep schedule
-   - ALL tasks must be high priority
-
-3. General rules:
-   - Every task MUST have a related_event that matches a meeting description
-   - Every meeting MUST have corresponding tasks in the tasks array
-   - Course codes must be propagated to all related tasks
-   - DO NOT specify times for preparation tasks
-
-Parse the input text completely and output only the JSON object.
-Text to parse: "{text}"
-"""
-
 def save_schedule(schedule):
-    """Save the schedule to persistent storage"""
-    with open(STORAGE_PATH, 'w') as f:
-        json.dump(schedule, f, indent=2)
+    """Save the schedule to storage."""
+    try:
+        # Ensure the schedule has all required IDs
+        schedule = ensure_ids(schedule)
+        
+        # Create storage directory if it doesn't exist
+        os.makedirs(os.path.dirname(STORAGE_PATH), exist_ok=True)
+        
+        # Save to file
+        with open(STORAGE_PATH, 'w') as f:
+            json.dump(schedule, f, indent=2)
+            
+        return schedule
+    except Exception as e:
+        logger.error(f"Error saving schedule: {str(e)}")
+        raise
 
 def load_schedule():
-    """Load the latest schedule from storage"""
-    if os.path.exists(STORAGE_PATH):
+    """Load the schedule from storage."""
+    try:
         with open(STORAGE_PATH, 'r') as f:
-            return json.load(f)
-    return None
+            schedule = json.load(f)
+        return schedule
+    except FileNotFoundError:
+        # Return empty schedule if file doesn't exist
+        return {"meetings": [], "tasks": [], "course_codes": []}
+    except Exception as e:
+        logger.error(f"Error loading schedule: {str(e)}")
+        raise
 
 def convert_to_24h(time_str: str) -> str:
     if not time_str or time_str in ['None', 'null']:
@@ -172,31 +106,57 @@ def check_missing_info(schedule: dict) -> list:
             questions.append({
                 "type": "time",
                 "question": f"What time is the {meeting.get('description')}?",
-                "options": ["morning", "afternoon", "evening", "specific_time"],
                 "field": "time",
-                "target": meeting.get("description")
+                "target": meeting.get("description"),
+                "target_type": "meeting",
+                "target_id": meeting.get("id")
             })
         if not meeting.get("duration_minutes"):
             questions.append({
                 "type": "duration",
                 "question": f"How long is the {meeting.get('description')}?",
-                "options": ["30", "60", "90", "120"],
                 "field": "duration_minutes",
-                "target": meeting.get("description")
+                "target": meeting.get("description"),
+                "target_type": "meeting",
+                "target_id": meeting.get("id")
+            })
+        if not meeting.get("course_code") and meeting.get("type") in ["exam", "presentation"]:
+            questions.append({
+                "type": "course_code",
+                "question": f"What is the course code for the {meeting.get('description')}?",
+                "field": "course_code",
+                "target": meeting.get("description"),
+                "target_type": "meeting",
+                "target_id": meeting.get("id")
             })
     
-    # Check tasks
+    # Check tasks - only ask for course code for preparation tasks
     for task in schedule.get("tasks", []):
-        if not task.get("day"):
+        if not task.get("course_code") and task.get("type") in ["exam_preparation", "presentation_preparation"]:
             questions.append({
-                "type": "day",
-                "question": f"When should the task '{task.get('description')}' be scheduled?",
-                "options": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-                "field": "day",
-                "target": task.get("description")
+                "type": "course_code",
+                "question": f"What is the course code for the {task.get('description')}?",
+                "field": "course_code",
+                "target": task.get("description"),
+                "target_type": "task",
+                "target_id": task.get("id")
             })
     
     return questions
+
+def clean_schedule(schedule: dict) -> dict:
+    """Remove missing_info fields from the schedule"""
+    schedule = deepcopy(schedule)
+    
+    for meeting in schedule.get("meetings", []):
+        if "missing_info" in meeting:
+            del meeting["missing_info"]
+    
+    for task in schedule.get("tasks", []):
+        if "missing_info" in task:
+            del task["missing_info"]
+    
+    return schedule
 
 def convert_answer_value(answer_type: str, value: str) -> any:
     """Convert answer values to appropriate types"""
@@ -231,26 +191,63 @@ def update_schedule_with_answers(schedule: dict, answers: list) -> dict:
                 
     return schedule
 
+def ensure_ids(schedule):
+    """Ensure all items in the schedule have unique IDs."""
+    if not schedule:
+        return schedule
+        
+    # Handle meetings
+    if 'meetings' in schedule:
+        for meeting in schedule['meetings']:
+            if 'id' not in meeting or not meeting['id']:
+                meeting['id'] = str(uuid.uuid4())
+                
+    # Handle tasks
+    if 'tasks' in schedule:
+        for task in schedule['tasks']:
+            if 'id' not in task or not task['id']:
+                task['id'] = str(uuid.uuid4())
+                
+    return schedule
+
 @app.route('/parse-schedule', methods=['POST'])
 def parse_schedule():
     try:
         data = request.get_json()
+        logger.debug(f"Received data: {data}")
+        
         if not data or 'text' not in data:
+            logger.error("Missing text parameter in request")
             return jsonify({'error': 'Missing text parameter'}), 400
 
         # Prepare prompt for IEP1
         prompt = f"{PARSING_PROMPT}\n\nSchedule text:\n{data['text']}"
+        logger.debug(f"Sending request to IEP1 with prompt length: {len(prompt)}")
 
         # Call IEP1 for parsing
         try:
+            logger.debug(f"Making request to IEP1 at {IEP1_URL}/predict")
             response = requests.post(
                 f"{IEP1_URL}/predict",
-                json={'prompt': prompt}
+                json={'prompt': prompt},
+                timeout=30
             )
+            logger.debug(f"IEP1 response status: {response.status_code}")
+            logger.debug(f"IEP1 response content: {response.text}")
+            
+            if response.status_code != 200:
+                logger.error(f"IEP1 returned error: {response.text}")
+                return jsonify({'error': f'IEP1 error: {response.text}'}), response.status_code
+                
             response.raise_for_status()
             
             # Get the response text and clean it
-            response_text = response.json()
+            try:
+                response_text = response.json()
+                logger.debug(f"Cleaned response text: {response_text}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to decode IEP1 response as JSON: {e}")
+                return jsonify({'error': 'Invalid JSON response from IEP1'}), 500
             
             # If the response is wrapped in markdown code blocks, extract the JSON
             if isinstance(response_text, str):
@@ -259,16 +256,46 @@ def parse_schedule():
                     json_str = response_text.split('```')[1]
                     if json_str.startswith('json\n'):
                         json_str = json_str[5:]
-                    parsed_data = json.loads(json_str)
+                    try:
+                        parsed_data = json.loads(json_str)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse JSON from markdown: {e}")
+                        return jsonify({'error': 'Invalid JSON in markdown response'}), 500
                 else:
                     # If it's a string but not markdown, try parsing it as JSON
-                    parsed_data = json.loads(response_text)
+                    try:
+                        parsed_data = json.loads(response_text)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse JSON from string: {e}")
+                        return jsonify({'error': 'Invalid JSON in response'}), 500
             else:
                 # If it's already a dict/object, use it as is
                 parsed_data = response_text
             
+            # Validate the parsed data
+            if not isinstance(parsed_data, dict):
+                logger.error(f"Parsed data is not a dictionary: {type(parsed_data)}")
+                return jsonify({'error': 'Invalid response format from IEP1'}), 500
+            
+            # Ensure all items have IDs
+            parsed_data = ensure_ids(parsed_data)
+            
+            # Check for missing information
+            questions = check_missing_info(parsed_data)
+            
+            if questions:
+                return jsonify({
+                    'status': 'questions_needed',
+                    'questions': questions,
+                    'schedule': parsed_data
+                })
+            
             # Save the parsed schedule
-            save_schedule(parsed_data)
+            try:
+                save_schedule(parsed_data)
+            except Exception as e:
+                logger.error(f"Failed to save schedule: {e}")
+                return jsonify({'error': 'Failed to save schedule'}), 500
             
             return jsonify({
                 'status': 'complete',
@@ -276,17 +303,20 @@ def parse_schedule():
             })
             
         except requests.exceptions.RequestException as e:
+            logger.error(f"Error communicating with IEP1: {str(e)}")
             return jsonify({'error': f'Error communicating with IEP1: {str(e)}'}), 500
         except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON response from IEP1: {str(e)}")
             return jsonify({'error': f'Invalid JSON response from IEP1: {str(e)}'}), 500
 
     except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/modify-schedule', methods=['POST'])
 def modify_schedule():
     try:
-        data = request.json
+        data = request.get_json()
         if not data or 'text' not in data:
             return jsonify({"error": "Missing text parameter"}), 400
             
@@ -296,12 +326,13 @@ def modify_schedule():
             return jsonify({"error": "No schedule found to modify"}), 404
             
         # Create prompt for IEP1
-        prompt = PARSING_PROMPT.format(text=data['text'])
+        prompt = f"{PARSING_PROMPT}\n\nSchedule text:\n{data['text']}"
         
         # Call IEP1 for parsing
         response = requests.post(
             f"{IEP1_URL}/predict",
-            json={"prompt": prompt}
+            json={"prompt": prompt},
+            timeout=30
         )
         
         if response.status_code != 200:
@@ -309,7 +340,18 @@ def modify_schedule():
             
         # Parse the response
         try:
-            new_schedule = json.loads(response.json())
+            response_text = response.json()
+            if isinstance(response_text, str):
+                if response_text.startswith('```'):
+                    json_str = response_text.split('```')[1]
+                    if json_str.startswith('json\n'):
+                        json_str = json_str[5:]
+                    new_schedule = json.loads(json_str)
+                else:
+                    new_schedule = json.loads(response_text)
+            else:
+                new_schedule = response_text
+                
             new_schedule = validate_and_fix_times(new_schedule)
             
             # Check for missing information
@@ -330,10 +372,17 @@ def modify_schedule():
                 "schedule": new_schedule
             })
             
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {e}")
             return jsonify({"error": "Invalid JSON response from IEP1"}), 500
             
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "Request timed out"}), 504
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request error: {e}")
+        return jsonify({"error": f"Request error: {str(e)}"}), 500
     except Exception as e:
+        logger.error(f"Unexpected error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/health', methods=['GET'])
@@ -369,6 +418,138 @@ def get_schedule():
         })
             
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/answer-question', methods=['POST'])
+def answer_question():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        logger.info(f"Processing answer for {data.get('type', 'unknown')} question")
+
+        # Load current schedule
+        schedule = load_schedule()
+        if not schedule:
+            return jsonify({'error': 'No schedule found'}), 404
+
+        # Update the schedule with the answer
+        item_id = data.get('item_id')
+        answer_type = data.get('type')
+        answer_value = data.get('answer')
+
+        if not all([item_id, answer_type, answer_value]):
+            return jsonify({'error': 'Missing required fields'}), 400
+
+        # Find and update the item
+        updated = False
+        for item_list in [schedule.get('meetings', []), schedule.get('tasks', [])]:
+            for item in item_list:
+                if item.get('id') == item_id:
+                    if answer_type == 'time':
+                        item['time'] = convert_to_24h(answer_value)
+                    elif answer_type == 'duration':
+                        try:
+                            item['duration_minutes'] = int(answer_value)
+                        except ValueError:
+                            return jsonify({'error': 'Invalid duration value'}), 400
+                    elif answer_type == 'course_code':
+                        item['course_code'] = answer_value
+
+                    # Remove the field from missing_info
+                    field_map = {
+                        'time': 'time',
+                        'duration': 'duration_minutes',
+                        'course_code': 'course_code'
+                    }
+                    if field_map[answer_type] in item.get('missing_info', []):
+                        item['missing_info'].remove(field_map[answer_type])
+                    updated = True
+                    break
+            if updated:
+                break
+
+        if not updated:
+            return jsonify({'error': 'Item not found'}), 404
+
+        # Save the updated schedule
+        save_schedule(schedule)
+
+        # Check if there are more questions
+        questions = check_missing_info(schedule)
+        
+        return jsonify({
+            'success': True,
+            'has_more_questions': len(questions) > 0,
+            'questions': questions if questions else None,
+            'schedule': schedule
+        })
+
+    except Exception as e:
+        logger.error(f"Error processing answer: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/handle-missing-info', methods=['POST'])
+def handle_missing_info():
+    try:
+        data = request.get_json()
+        logger.debug(f"Received missing info data: {data}")
+        
+        if not data or 'schedule' not in data or 'answer' not in data:
+            logger.error("Missing required parameters in request")
+            return jsonify({'error': 'Missing required parameters'}), 400
+            
+        schedule = data['schedule']
+        answer = data['answer']
+        
+        # Update the schedule with the answer
+        updated_schedule = update_schedule_with_answers(schedule, [answer])
+        
+        # Check if there are more missing fields
+        remaining_questions = check_missing_info(updated_schedule)
+        
+        # If no more questions, clean the schedule before returning
+        if not remaining_questions:
+            updated_schedule = clean_schedule(updated_schedule)
+            return jsonify({
+                'schedule': updated_schedule,
+                'complete': True
+            })
+        
+        # Return the next question
+        return jsonify({
+            'schedule': updated_schedule,
+            'next_question': remaining_questions[0],
+            'complete': False
+        })
+        
+    except Exception as e:
+        logger.error(f"Error handling missing info: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/store-schedule', methods=['POST'])
+def store_schedule_endpoint():
+    try:
+        data = request.get_json()
+        if not data or 'schedule' not in data:
+            return jsonify({'error': 'No schedule provided'}), 400
+
+        schedule = data['schedule']
+        
+        # Ensure all items have IDs
+        schedule = ensure_ids(schedule)
+        
+        # Save the schedule
+        save_schedule(schedule)
+        
+        return jsonify({
+            'status': 'success',
+            'schedule': schedule
+        })
+        
+    except Exception as e:
+        logger.error(f"Error storing schedule: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
