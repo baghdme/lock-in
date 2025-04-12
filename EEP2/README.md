@@ -90,6 +90,12 @@ IEPs are simple internal endpoints that act as thin communication layers between
 
 All actual business logic and processing should be contained in EEP2 itself, not in the IEPs:
 
+### Course Code Extraction
+- Retrieves course codes from accessible storage (e.g., shared JSON file, database, or via API)
+- EEP2 will check `latest_schedule.json` or make API calls to UI service to access the current schedule
+- Extracts and processes the course codes to create course-specific workspaces
+- **Technical Tip**: Implement polling or webhooks to detect when new course codes are added to the schedule
+
 ### Document Processing
 - Extract text from various document formats
 - Pre-process and chunk content for analysis
