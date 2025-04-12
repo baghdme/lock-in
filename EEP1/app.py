@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from copy import deepcopy
 import logging
 from prompts import PARSING_PROMPT, MODIFY_PROMPT
+from preference_questions import get_preference_questions, get_algorithm_questions, get_default_preferences
 import uuid
 
 # Configure logging
@@ -22,7 +23,9 @@ CORS(app)  # Enable CORS for all routes
 
 # Service URLs
 IEP1_URL = os.getenv('IEP1_URL', 'http://localhost:5001')
+IEP2_URL = os.getenv('IEP2_URL', 'http://localhost:5004')
 logger.debug(f"Using IEP1_URL: {IEP1_URL}")
+logger.debug(f"Using IEP2_URL: {IEP2_URL}")
 
 # Storage configuration
 STORAGE_PATH = os.path.join(os.path.dirname(__file__), 'storage', 'latest_schedule.json')
@@ -131,8 +134,9 @@ def check_missing_info(schedule: dict) -> list:
             })
     
     # Check tasks - only ask for course code for preparation tasks
+    # Note: We don't ask for duration_minutes for tasks because that will be determined by the scheduler
     for task in schedule.get("tasks", []):
-        if not task.get("course_code") and task.get("type") in ["exam_preparation", "presentation_preparation"]:
+        if not task.get("course_code") and task.get("category") == "preparation":
             questions.append({
                 "type": "course_code",
                 "question": f"What is the course code for the {task.get('description')}?",
@@ -144,17 +148,35 @@ def check_missing_info(schedule: dict) -> list:
     
     return questions
 
-def clean_schedule(schedule: dict) -> dict:
-    """Remove missing_info fields from the schedule"""
+def clean_missing_info_from_tasks(schedule: dict) -> dict:
+    """Remove duration_minutes from missing_info for tasks since the scheduler handles this"""
     schedule = deepcopy(schedule)
-    
-    for meeting in schedule.get("meetings", []):
-        if "missing_info" in meeting:
-            del meeting["missing_info"]
     
     for task in schedule.get("tasks", []):
         if "missing_info" in task:
+            # Remove duration_minutes from missing_info for tasks
+            if "duration_minutes" in task.get("missing_info", []):
+                task["missing_info"].remove("duration_minutes")
+            
+            # If missing_info is now empty, remove it entirely
+            if not task["missing_info"]:
+                del task["missing_info"]
+    
+    return schedule
+
+def clean_schedule(schedule: dict) -> dict:
+    """Remove missing_info fields from the schedule without changing any field values"""
+    schedule = deepcopy(schedule)
+    
+    # Remove missing_info from tasks without changing any values
+    for task in schedule.get("tasks", []):
+        if "missing_info" in task:
             del task["missing_info"]
+    
+    # Remove missing_info from meetings without changing any values
+    for meeting in schedule.get("meetings", []):
+        if "missing_info" in meeting:
+            del meeting["missing_info"]
     
     return schedule
 
@@ -479,11 +501,21 @@ def answer_question():
         # Check if there are more questions
         questions = check_missing_info(schedule)
         
+        # If no more questions, check if we can proceed with IEP2 schedule generation
+        if not questions:
+            logger.info("All questions answered. Schedule ready for optimization.")
+            # Clean the schedule by removing all missing_info fields
+            schedule = clean_schedule(schedule)
+            logger.info("Removed all missing_info fields from schedule without changing field values")
+            # Save the cleaned schedule
+            save_schedule(schedule)
+        
         return jsonify({
             'success': True,
             'has_more_questions': len(questions) > 0,
             'questions': questions if questions else None,
-            'schedule': schedule
+            'schedule': schedule,
+            'ready_for_optimization': len(questions) == 0
         })
 
     except Exception as e:
@@ -550,6 +582,116 @@ def store_schedule_endpoint():
         
     except Exception as e:
         logger.error(f"Error storing schedule: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+# New endpoint for preference questions
+@app.route('/preference-questions', methods=['GET'])
+def get_preference_questions_endpoint():
+    """Get preference questions for schedule generation."""
+    try:
+        # Get questions from the preference_questions module
+        preferences = get_preference_questions()
+        algorithm = get_algorithm_questions()
+        
+        return jsonify({
+            "preference_questions": preferences,
+            "algorithm_questions": algorithm
+        })
+    except Exception as e:
+        logger.error(f"Error getting preference questions: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# New endpoint for generating a schedule using IEP2
+@app.route('/generate-optimized-schedule', methods=['POST'])
+def generate_optimized_schedule():
+    """
+    Generate an optimized schedule using IEP2 after all information is collected.
+    This should only be called when there are no more missing information questions.
+    """
+    try:
+        data = request.get_json()
+        
+        # Load current schedule if not provided
+        if not data or 'schedule' not in data:
+            schedule = load_schedule()
+        else:
+            schedule = data['schedule']
+            
+        if not schedule:
+            return jsonify({'error': 'No schedule found'}), 404
+            
+        # Check if schedule is complete for meetings (we don't care about task durations)
+        questions = check_missing_info(schedule)
+        if questions:
+            return jsonify({
+                'error': 'Schedule is incomplete',
+                'questions': questions
+            }), 400
+            
+        # Get user preferences or use defaults
+        preferences = data.get('preferences', {})
+        if not preferences:
+            preferences = get_default_preferences()
+            logger.info("Using default preferences for schedule generation")
+        
+        # Clean all missing_info fields from the schedule before sending to IEP2
+        cleaned_schedule = clean_schedule(schedule)
+        logger.info("Removed all missing_info fields from schedule for IEP2 without changing field values")
+        
+        # Log cleaned schedule for debugging
+        logger.info(f"Cleaned schedule: {json.dumps(cleaned_schedule, indent=2)}")
+        
+        # Prepare data for IEP2
+        iep2_data = {
+            'schedule': cleaned_schedule,
+            'preferences': preferences
+        }
+        
+        # Call IEP2 to generate schedule
+        try:
+            logger.info("Calling IEP2 to generate optimized schedule")
+            response = requests.post(
+                f"{IEP2_URL}/api/generate",
+                json=iep2_data,
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(f"Error from IEP2: {error_text}")
+                # Try to parse response JSON for more details
+                try:
+                    error_json = response.json()
+                    logger.error(f"Detailed IEP2 error: {json.dumps(error_json, indent=2)}")
+                    # Check if specific fields were mentioned in error
+                    if "missing_fields" in error_json:
+                        logger.error(f"IEP2 reports missing fields: {error_json['missing_fields']}")
+                except Exception as e:
+                    logger.error(f"Could not parse IEP2 error response as JSON: {e}")
+                
+                return jsonify({
+                    'error': f'IEP2 error: {error_text}'
+                }), response.status_code
+                
+            # Get optimized schedule from IEP2
+            optimized_schedule = response.json()
+            
+            # Save the optimized schedule
+            save_schedule(optimized_schedule)
+            
+            return jsonify({
+                'status': 'success',
+                'schedule': optimized_schedule
+            })
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error communicating with IEP2: {str(e)}")
+            return jsonify({
+                'error': f'Error communicating with IEP2: {str(e)}'
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error generating optimized schedule: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
