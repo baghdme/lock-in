@@ -29,19 +29,20 @@ logger.debug(f"Using IEP2_URL: {IEP2_URL}")
 
 # Storage configuration
 STORAGE_PATH = os.path.join(os.path.dirname(__file__), 'storage', 'latest_schedule.json')
+FINAL_PATH = os.path.join(os.path.dirname(__file__), 'storage', 'final_schedule.json')
 os.makedirs(os.path.dirname(STORAGE_PATH), exist_ok=True)
 
-def save_schedule(schedule):
+def save_schedule(schedule, path = STORAGE_PATH):
     """Save the schedule to storage."""
     try:
         # Ensure the schedule has all required IDs
         schedule = ensure_ids(schedule)
         
         # Create storage directory if it doesn't exist
-        os.makedirs(os.path.dirname(STORAGE_PATH), exist_ok=True)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         
         # Save to file
-        with open(STORAGE_PATH, 'w') as f:
+        with open(path, 'w') as f:
             json.dump(schedule, f, indent=2)
             
         return schedule
@@ -49,10 +50,10 @@ def save_schedule(schedule):
         logger.error(f"Error saving schedule: {str(e)}")
         raise
 
-def load_schedule():
+def load_schedule(path = STORAGE_PATH):
     """Load the schedule from storage."""
     try:
-        with open(STORAGE_PATH, 'r') as f:
+        with open(path, 'r') as f:
             schedule = json.load(f)
         return schedule
     except FileNotFoundError:
@@ -430,7 +431,7 @@ def health():
 @app.route('/get-schedule', methods=['GET'])
 def get_schedule():
     try:
-        schedule = load_schedule()
+        schedule = load_schedule(FINAL_PATH)
         if not schedule:
             return jsonify({'error': 'No schedule found'}), 404
             
@@ -646,6 +647,8 @@ def generate_optimized_schedule():
             'schedule': cleaned_schedule,
             'preferences': preferences
         }
+
+        print(f"IEP2 data: {iep2_data}")
         
         # Call IEP2 to generate schedule
         try:
@@ -677,7 +680,7 @@ def generate_optimized_schedule():
             optimized_schedule = response.json()
             
             # Save the optimized schedule
-            save_schedule(optimized_schedule)
+            save_schedule(optimized_schedule, FINAL_PATH)
             
             return jsonify({
                 'status': 'success',

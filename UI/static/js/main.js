@@ -426,181 +426,279 @@ function generateOptimizedSchedule() {
     });
 }
 
-function displayFormattedSchedule(schedule) {
+// --- DISPLAY FUNCTIONS ---
+
+// Main function: displays the formatted schedule.
+// Expects a JSON object ("data") that includes a "schedule" property.
+// If data.schedule.generated_calendar exists, it displays a day-by-day view,
+// otherwise it uses a simpler list view.
+// --- DISPLAY FUNCTIONS ---
+
+// Main function: displays the formatted schedule.
+// Expects a JSON object ("data") that includes a "schedule" property.
+// If data.schedule.generated_calendar exists, it displays a day-by-day view,
+// otherwise it uses a simpler list view.
+function displayFormattedSchedule(data) {
     const scheduleOutput = document.getElementById('scheduleOutput');
-    
-    // Only show schedule if it's the optimized version or if we need to show basic info
-    if (!preferencesSubmitted && !allMissingInfoResolved) {
-        scheduleOutput.innerHTML = '<div class="info-message">Please answer all questions to see your schedule.</div>';
+    // Clear any previous content
+    scheduleOutput.innerHTML = '';
+
+    // Create a heading
+    const heading = document.createElement('h3');
+    heading.textContent = 'Your Optimized Schedule';
+    scheduleOutput.appendChild(heading);
+
+    // If the JSON doesn’t include generated_calendar, fall back to simple view
+    if (!data.schedule || !data.schedule.generated_calendar) {
+        displaySimpleSchedule(data);
         return;
     }
-    
-    scheduleOutput.innerHTML = '<h3>Your Schedule</h3>';
-    
-    // Add special class for optimized schedule
-    if (preferencesSubmitted) {
-        scheduleOutput.innerHTML = '<h3>Your Optimized Schedule</h3>';
-        scheduleOutput.classList.add('optimized-schedule');
-    } else {
-        scheduleOutput.classList.remove('optimized-schedule');
-    }
-    
-    // Create meetings section
-    if (schedule.meetings && schedule.meetings.length > 0) {
+
+    // Build a calendar (day-by-day) view
+    const calendarContainer = document.createElement('div');
+    calendarContainer.className = 'calendar-view';
+
+    // Define the order of days
+    const dayOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+    dayOrder.forEach(day => {
+        // Grab the events for this day, or an empty array if none exist
+        const dayEvents = data.schedule.generated_calendar[day] || [];
+
+        // Create container for the day
+        const dayContainer = document.createElement('div');
+        dayContainer.className = 'schedule-day';
+
+        // Create day header
+        const dayHeader = document.createElement('h4');
+        dayHeader.className = 'day-header';
+        dayHeader.textContent = day;
+        dayContainer.appendChild(dayHeader);
+
+        // If no events, show a "No events" message
+        if (dayEvents.length === 0) {
+            const noEventsMsg = document.createElement('p');
+            noEventsMsg.className = 'no-events';
+            noEventsMsg.textContent = 'No events.';
+            dayContainer.appendChild(noEventsMsg);
+        } else {
+            // Sort events by start time (assumes "HH:MM" format)
+            dayEvents.sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
+
+            // Create a list container for events
+            const eventsList = document.createElement('ul');
+            eventsList.className = 'day-events';
+
+            // Populate events list
+            dayEvents.forEach(event => {
+                const eventItem = document.createElement('li');
+                eventItem.className = `schedule-event event-type-${event.type || 'default'}`;
+
+                // Optional colored marker based on event type
+                const typeMarker = document.createElement('span');
+                typeMarker.className = `type-marker type-${event.type || 'default'}`;
+                eventItem.appendChild(typeMarker);
+
+                // Create an element to hold event details
+                const eventContent = document.createElement('div');
+                eventContent.className = 'event-content';
+
+                // Add event title/description
+                const eventTitle = document.createElement('div');
+                eventTitle.className = 'event-title';
+                eventTitle.textContent = event.description;
+                eventContent.appendChild(eventTitle);
+
+                // Add event details container
+                const eventDetails = document.createElement('div');
+                eventDetails.className = 'event-details';
+
+                // Add time information (start & end times, duration)
+                const timeInfo = document.createElement('div');
+                timeInfo.className = 'time-info';
+                if (event.start_time && event.end_time) {
+                    timeInfo.innerHTML = `<span class="time">${formatTime(event.start_time)} - ${formatTime(event.end_time)}</span>`;
+                }
+                if (event.duration) {
+                    timeInfo.innerHTML += `<span class="duration">(${formatDuration(event.duration)})</span>`;
+                }
+                eventDetails.appendChild(timeInfo);
+
+                // Add location if available
+                if (event.location) {
+                    const locationInfo = document.createElement('div');
+                    locationInfo.className = 'location-info';
+                    locationInfo.textContent = event.location;
+                    eventDetails.appendChild(locationInfo);
+                }
+                
+                // Add course code if available
+                if (event.course_code) {
+                    const courseInfo = document.createElement('div');
+                    courseInfo.className = 'course-info';
+                    courseInfo.textContent = event.course_code;
+                    eventDetails.appendChild(courseInfo);
+                }
+
+                // Append details to event content and add to the event item
+                eventContent.appendChild(eventDetails);
+                eventItem.appendChild(eventContent);
+                eventsList.appendChild(eventItem);
+            });
+
+            // Append events list to the day container
+            dayContainer.appendChild(eventsList);
+        }
+
+        // Append each day container to the overall calendar container
+        calendarContainer.appendChild(dayContainer);
+    });
+
+    // Append the complete calendar to the output element
+    scheduleOutput.appendChild(calendarContainer);
+}
+
+// Fallback simple schedule view when there is no generated_calendar
+function displaySimpleSchedule(data) {
+    const scheduleOutput = document.getElementById('scheduleOutput');
+
+    // -- Meetings Section --
+    if (data.schedule.meetings && data.schedule.meetings.length > 0) {
         const meetingsContainer = document.createElement('div');
         meetingsContainer.className = 'schedule-section';
-        
+
         const meetingsTitle = document.createElement('h4');
         meetingsTitle.textContent = 'Events';
         meetingsContainer.appendChild(meetingsTitle);
-        
+
         const meetingsList = document.createElement('ul');
         meetingsList.className = 'schedule-list';
-        
-        schedule.meetings.forEach(meeting => {
+
+        data.schedule.meetings.forEach(meeting => {
             const meetingItem = document.createElement('li');
             meetingItem.className = `schedule-item priority-${meeting.priority || 'medium'}`;
-            
+
             const title = document.createElement('div');
             title.className = 'event-title';
             title.textContent = meeting.description;
             meetingItem.appendChild(title);
-            
+
             const details = document.createElement('div');
             details.className = 'event-details';
-            
+
             if (meeting.time) {
-                const time = document.createElement('span');
-                time.textContent = meeting.time;
-                details.appendChild(time);
+                details.innerHTML += `<span class="time">${formatTime(meeting.time)}</span>`;
             }
-            
             if (meeting.day) {
-                const day = document.createElement('span');
-                day.textContent = meeting.day;
-                details.appendChild(day);
+                details.innerHTML += `<span class="day">${meeting.day}</span>`;
             }
-            
             if (meeting.duration_minutes) {
-                const duration = document.createElement('span');
-                duration.textContent = `${meeting.duration_minutes} minutes`;
-                details.appendChild(duration);
+                details.innerHTML += `<span class="duration">${meeting.duration_minutes} minutes</span>`;
             }
-            
             if (meeting.location) {
-                const location = document.createElement('span');
-                location.textContent = meeting.location;
-                details.appendChild(location);
+                details.innerHTML += `<span class="location">${meeting.location}</span>`;
             }
-            
             if (meeting.course_code) {
-                const courseCode = document.createElement('span');
-                courseCode.className = 'course-code';
-                courseCode.textContent = meeting.course_code;
-                details.appendChild(courseCode);
+                details.innerHTML += `<span class="course-code">${meeting.course_code}</span>`;
             }
-            
+
             meetingItem.appendChild(details);
             meetingsList.appendChild(meetingItem);
         });
-        
+
         meetingsContainer.appendChild(meetingsList);
         scheduleOutput.appendChild(meetingsContainer);
     }
-    
-    // Create tasks section
-    if (schedule.tasks && schedule.tasks.length > 0) {
+
+    // -- Tasks Section --
+    if (data.schedule.tasks && data.schedule.tasks.length > 0) {
         const tasksContainer = document.createElement('div');
         tasksContainer.className = 'schedule-section';
-        
+
         const tasksTitle = document.createElement('h4');
         tasksTitle.textContent = 'Tasks';
         tasksContainer.appendChild(tasksTitle);
-        
+
         const tasksList = document.createElement('ul');
         tasksList.className = 'schedule-list';
-        
-        schedule.tasks.forEach(task => {
+
+        data.schedule.tasks.forEach(task => {
             const taskItem = document.createElement('li');
             taskItem.className = `schedule-item priority-${task.priority || 'medium'}`;
-            
+
             const title = document.createElement('div');
             title.className = 'task-title';
             title.textContent = task.description;
             taskItem.appendChild(title);
-            
+
             const details = document.createElement('div');
             details.className = 'task-details';
-            
+
             if (task.time) {
-                const time = document.createElement('span');
-                time.textContent = task.time;
-                details.appendChild(time);
+                details.innerHTML += `<span class="time">${formatTime(task.time)}</span>`;
             }
-            
             if (task.day) {
-                const day = document.createElement('span');
-                day.textContent = task.day;
-                details.appendChild(day);
+                details.innerHTML += `<span class="day">${task.day}</span>`;
             }
-            
             if (task.duration_minutes) {
-                const duration = document.createElement('span');
-                duration.textContent = `${task.duration_minutes} minutes`;
-                details.appendChild(duration);
+                details.innerHTML += `<span class="duration">${task.duration_minutes} minutes</span>`;
             }
-            
             if (task.related_event) {
-                const relatedEvent = document.createElement('span');
-                relatedEvent.textContent = `For: ${task.related_event}`;
-                details.appendChild(relatedEvent);
+                details.innerHTML += `<span class="related-event">For: ${task.related_event}</span>`;
             }
-            
             if (task.course_code) {
-                const courseCode = document.createElement('span');
-                courseCode.className = 'course-code';
-                courseCode.textContent = task.course_code;
-                details.appendChild(courseCode);
+                details.innerHTML += `<span class="course-code">${task.course_code}</span>`;
             }
-            
+
             taskItem.appendChild(details);
             tasksList.appendChild(taskItem);
         });
-        
+
         tasksContainer.appendChild(tasksList);
         scheduleOutput.appendChild(tasksContainer);
     }
 }
 
-// Helper functions for formatting schedule display
+// --- HELPER FUNCTIONS ---
+
+// Converts a time string ("HH:MM") to minutes (used for sorting)
+function timeToMinutes(timeStr) {
+    if (!timeStr) return 0;
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + (minutes || 0);
+}
+
+// Formats time from "HH:MM" to a "H:MM AM/PM" format
 function formatTime(time) {
     if (!time) return '';
     try {
-        const [hours, minutes] = time.split(':');
-        const hour = parseInt(hours);
-        const ampm = hour >= 12 ? 'PM' : 'AM';
-        const hour12 = hour % 12 || 12;
-        return `${hour12}:${minutes} ${ampm}`;
+        const [hoursStr, minutesStr] = time.split(':');
+        const hours = parseInt(hoursStr, 10);
+        const mins = parseInt(minutesStr, 10) || 0;
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const hour12 = hours % 12 || 12;
+        return `${hour12}:${mins.toString().padStart(2, '0')} ${ampm}`;
     } catch (e) {
         return time;
     }
 }
 
+// Converts a duration in minutes into a formatted string ("X hr Y min" or "X min")
 function formatDuration(minutes) {
     if (!minutes) return '';
-    const hours = Math.floor(minutes / 60);
+    const hrs = Math.floor(minutes / 60);
     const mins = minutes % 60;
-    if (hours === 0) {
-        return `${mins} min`;
-    } else if (mins === 0) {
-        return `${hours} hr`;
+    if (hrs && mins) {
+        return `${hrs} hr ${mins} min`;
+    } else if (hrs) {
+        return `${hrs} hr`;
     } else {
-        return `${hours} hr ${mins} min`;
+        return `${mins} min`;
     }
 }
 
-// New functions for preference handling and optimization
-
+// --- ORIGINAL createPreferenceInput FUNCTION ---
+// This function is kept unchanged from your version.
 function createPreferenceInput(question) {
     let inputHtml = '';
     
@@ -672,4 +770,4 @@ function createPreferenceInput(question) {
     }
     
     return inputHtml;
-} 
+}
