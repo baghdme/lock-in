@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parsing Results</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #2c3e50;
+            margin-top: 30px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .results {
+            margin-top: 20px;
+        }
+        .parsed-text {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+        }
+        .success-message {
+            color: #2ecc71;
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #e8f8f5;
+            border-radius: 4px;
+        }
+        .btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 20px;
+        }
+        .btn:hover {
+            background-color: #2980b9;
+        }
+        .error {
+            color: #e74c3c;
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #fadbd8;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Parsing Results</h1>
+        
+        {% if error %}
+        <div class="error">
+            <strong>Error:</strong> {{ error }}
+        </div>
+        {% else %}
+            <div class="success-message">
+                <strong>Success!</strong> Document has been parsed successfully.
+            </div>
+            <div class="results">
+                {% if parsed_text %}
+                    <h2>Extracted Text Content</h2>
+                    <div class="parsed-text">{{ parsed_text }}</div>
+                {% else %}
+                    <p>No text content was returned from the parser.</p>
+                {% endif %}
+            </div>
+        {% endif %}
+        
+        <a href="/" class="btn">Upload Another File</a>
+    </div>
+</body>
+</html> 
