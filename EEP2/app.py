@@ -56,14 +56,19 @@ def upload_file():
             if parse_response.status_code != 200:
                 return render_template('results.html', error=f"Document parsing error: {parse_response.text}")
             
+            # Get the response data
+            response_data = parse_response.json()
+            
             # Get the extracted text from the parser
-            parsed_content = parse_response.json().get('text', '')
+            parsed_text = response_data.get('text', '')
+            # Get any extracted images
+            images = response_data.get('images', [])
             
-            if not parsed_content:
-                return render_template('results.html', error="No text could be extracted from the document")
+            if not parsed_text and not images:
+                return render_template('results.html', error="No content could be extracted from the document")
             
-            # Display the parsed content
-            return render_template('results.html', parsed_text=parsed_content)
+            # Display the parsed content and images
+            return render_template('results.html', parsed_text=parsed_text, images=images)
                 
         except requests.RequestException as e:
             return render_template('results.html', error=f'Connection error: {str(e)}')
