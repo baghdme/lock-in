@@ -69,6 +69,13 @@
             background-color: #fadbd8;
             border-radius: 4px;
         }
+        .warning {
+            color: #f39c12;
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #fef9e7;
+            border-radius: 4px;
+        }
         .images-container {
             margin-top: 30px;
         }
@@ -93,7 +100,79 @@
             gap: 20px;
             margin-top: 20px;
         }
+        .embedding-container {
+            margin-top: 30px;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .embedding-info {
+            margin-bottom: 15px;
+        }
+        .embedding-vector {
+            font-family: monospace;
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+            background-color: #fff;
+            border: 1px solid #eee;
+            border-radius: 4px;
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 15px;
+            cursor: pointer;
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            margin-right: 5px;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }
+        .tab.active {
+            background-color: white;
+            border-bottom: 1px solid white;
+            margin-bottom: -1px;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
     </style>
+    <script>
+        function openTab(evt, tabName) {
+            // Hide all tab content
+            var tabContents = document.getElementsByClassName("tab-content");
+            for (var i = 0; i < tabContents.length; i++) {
+                tabContents[i].classList.remove("active");
+            }
+            
+            // Remove active class from all tabs
+            var tabs = document.getElementsByClassName("tab");
+            for (var i = 0; i < tabs.length; i++) {
+                tabs[i].classList.remove("active");
+            }
+            
+            // Show the specific tab content
+            document.getElementById(tabName).classList.add("active");
+            
+            // Add active class to the button that opened the tab
+            evt.currentTarget.classList.add("active");
+        }
+        
+        // Set default tab on load
+        window.onload = function() {
+            document.getElementsByClassName("tab")[0].click();
+        };
+    </script>
 </head>
 <body>
     <div class="container">
@@ -108,15 +187,35 @@
                 <strong>Success!</strong> Document has been parsed successfully.
             </div>
             
+            {% if error_embed %}
+            <div class="warning">
+                <strong>Warning:</strong> {{ error_embed }}
+            </div>
+            {% endif %}
+            
+            <div class="tabs">
+                {% if parsed_text %}
+                <div class="tab" onclick="openTab(event, 'tab-text')">Text Content</div>
+                {% endif %}
+                {% if images and images|length > 0 %}
+                <div class="tab" onclick="openTab(event, 'tab-images')">Images ({{ images|length }})</div>
+                <div class="tab" onclick="openTab(event, 'tab-ocr')">OCR Text</div>
+                {% endif %}
+                {% if embedding %}
+                <div class="tab" onclick="openTab(event, 'tab-embedding')">Embedding</div>
+                {% endif %}
+            </div>
+            
             <div class="results">
                 {% if parsed_text %}
+                <div id="tab-text" class="tab-content">
                     <h2>Extracted Text Content</h2>
                     <div class="parsed-text">{{ parsed_text }}</div>
-                {% else %}
-                    <p>No text content was extracted from the document.</p>
+                </div>
                 {% endif %}
                 
                 {% if images and images|length > 0 %}
+                <div id="tab-images" class="tab-content">
                     <h2>Extracted Images ({{ images|length }})</h2>
                     <div class="image-grid">
                         {% for image in images %}
@@ -127,6 +226,56 @@
                             </div>
                         {% endfor %}
                     </div>
+                </div>
+                
+                <div id="tab-ocr" class="tab-content">
+                    <h2>OCR Text Extracted from Images</h2>
+                    {% if ocr_texts and ocr_texts|length > 0 %}
+                        {% for ocr in ocr_texts %}
+                            <div class="image-item">
+                                <div class="image-title">OCR Text from {{ ocr.filename }}</div>
+                                <div class="parsed-text">{{ ocr.text }}</div>
+                                <img src="data:image/{{ ocr.filename.split('.')[-1] }};base64,{{ ocr.data }}" 
+                                     alt="{{ ocr.filename }}" class="extracted-image" style="margin-top: 10px; max-height: 200px;">
+                            </div>
+                        {% endfor %}
+                    {% elif images and images|length > 0 %}
+                        {% set ocr_found = false %}
+                        {% for image in images %}
+                            {% if image.ocr_text and image.ocr_text.strip() %}
+                                {% set ocr_found = true %}
+                                <div class="image-item">
+                                    <div class="image-title">OCR Text from {{ image.filename }}</div>
+                                    <div class="parsed-text">{{ image.ocr_text }}</div>
+                                    <img src="data:image/{{ image.filename.split('.')[-1] }};base64,{{ image.data }}" 
+                                         alt="{{ image.filename }}" class="extracted-image" style="margin-top: 10px; max-height: 200px;">
+                                </div>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if not ocr_found %}
+                            <p>No text could be extracted from the images in this document.</p>
+                        {% endif %}
+                    {% else %}
+                        <p>No text could be extracted from the images in this document.</p>
+                    {% endif %}
+                </div>
+                {% endif %}
+                
+                {% if embedding %}
+                <div id="tab-embedding" class="tab-content">
+                    <h2>Text Embedding</h2>
+                    <div class="embedding-container">
+                        <div class="embedding-info">
+                            <p><strong>Model:</strong> {{ embedding.model }}</p>
+                            <p><strong>Dimensions:</strong> {{ embedding.dimensions }}</p>
+                            <p><strong>Processed at:</strong> {{ embedding.timestamp }}</p>
+                        </div>
+                        
+                        <h3>Embedding Vector</h3>
+                        <div class="embedding-vector">{{ embedding.embedding|tojson }}</div>
+                    </div>
+                </div>
                 {% endif %}
             </div>
         {% endif %}

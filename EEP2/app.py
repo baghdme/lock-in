@@ -17,6 +17,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Service URLs
 IEP_PARSE_URL = os.environ.get('IEP_PARSE_URL', 'http://localhost:5003') + '/parse'
+IEP_EMBED_URL = os.environ.get('IEP_EMBED_URL', 'http://localhost:5004') + '/embed'
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -67,8 +68,47 @@ def upload_file():
             if not parsed_text and not images:
                 return render_template('results.html', error="No content could be extracted from the document")
             
-            # Display the parsed content and images
-            return render_template('results.html', parsed_text=parsed_text, images=images)
+            # Process OCR text from images to make it more accessible in the template
+            ocr_texts = []
+            for img in images:
+                if 'ocr_text' in img and img['ocr_text'].strip():
+                    ocr_texts.append({
+                        'filename': img['filename'],
+                        'text': img['ocr_text'].strip(),
+                        'data': img['data']
+                    })
+            
+            # If we have text, send it to the embedding service
+            embedding_result = None
+            if parsed_text:
+                try:
+                    embed_response = requests.post(
+                        IEP_EMBED_URL,
+                        json={'text': parsed_text},
+                        timeout=30
+                    )
+                    
+                    if embed_response.status_code == 200:
+                        embedding_result = embed_response.json()
+                    else:
+                        return render_template('results.html', 
+                                             parsed_text=parsed_text,
+                                             images=images,
+                                             ocr_texts=ocr_texts,
+                                             error_embed=f"Embedding error: {embed_response.text}")
+                except requests.RequestException as e:
+                    return render_template('results.html', 
+                                         parsed_text=parsed_text,
+                                         images=images,
+                                         ocr_texts=ocr_texts,
+                                         error_embed=f"Embedding service connection error: {str(e)}")
+            
+            # Display the parsed content, images, and embedding results
+            return render_template('results.html', 
+                                 parsed_text=parsed_text, 
+                                 images=images,
+                                 ocr_texts=ocr_texts,
+                                 embedding=embedding_result)
                 
         except requests.RequestException as e:
             return render_template('results.html', error=f'Connection error: {str(e)}')
@@ -86,10 +126,17 @@ def health_check():
     
     # Check if we can connect to the IEP-parse service
     try:
-        parse_response = requests.get(os.environ.get('IEP_PARSE_URL', 'http://iep-parse:5003') + '/health', timeout=5)
+        parse_response = requests.get(os.environ.get('IEP_PARSE_URL', 'http://localhost:5003') + '/health', timeout=5)
         health_status['services']['iep_parse'] = {'status': 'healthy'} if parse_response.status_code == 200 else {'status': 'unhealthy'}
     except requests.RequestException:
         health_status['services']['iep_parse'] = {'status': 'unhealthy', 'error': 'Cannot connect to IEP-parse service'}
+    
+    # Check if we can connect to the IEP-embed service
+    try:
+        embed_response = requests.get(os.environ.get('IEP_EMBED_URL', 'http://localhost:5004') + '/health', timeout=5)
+        health_status['services']['iep_embed'] = {'status': 'healthy'} if embed_response.status_code == 200 else {'status': 'unhealthy'}
+    except requests.RequestException:
+        health_status['services']['iep_embed'] = {'status': 'unhealthy', 'error': 'Cannot connect to IEP-embed service'}
     
     # Overall status is healthy only if all services are healthy
     if any(service.get('status') != 'healthy' for service in health_status['services'].values()):
