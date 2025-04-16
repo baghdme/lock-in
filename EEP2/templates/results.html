@@ -270,10 +270,58 @@
                             <p><strong>Model:</strong> {{ embedding.model }}</p>
                             <p><strong>Dimensions:</strong> {{ embedding.dimensions }}</p>
                             <p><strong>Processed at:</strong> {{ embedding.timestamp }}</p>
+                            <p><strong>Sentences processed:</strong> {{ embedding.num_sentences }}</p>
                         </div>
                         
-                        <h3>Embedding Vector</h3>
-                        <div class="embedding-vector">{{ embedding.embedding|tojson }}</div>
+                        {% if embedding.statistics %}
+                        <h3>Embedding Statistics</h3>
+                        <div class="embedding-stats">
+                            <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+                                <tr style="background-color: #f5f5f5;">
+                                    <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Metric</th>
+                                    <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Value</th>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">Min</td>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">{{ "%.4f"|format(embedding.statistics.min) }}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">Max</td>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">{{ "%.4f"|format(embedding.statistics.max) }}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">Mean</td>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">{{ "%.4f"|format(embedding.statistics.mean) }}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">Median</td>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">{{ "%.4f"|format(embedding.statistics.median) }}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">Standard Deviation</td>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">{{ "%.4f"|format(embedding.statistics.std) }}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">L2 Norm</td>
+                                    <td style="padding: 8px; border: 1px solid #ddd;">{{ "%.4f"|format(embedding.statistics.l2_norm) }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                        {% endif %}
+                        
+                        {% if embedding.visualization and embedding.visualization.pca_visualization %}
+                        <h3>Embedding Visualization</h3>
+                        <div class="embedding-visualization">
+                            <p><em>2D PCA projection of sentence embeddings and document embedding:</em></p>
+                            <img src="data:image/png;base64,{{ embedding.visualization.pca_visualization }}" 
+                                 alt="Embedding Visualization" style="max-width: 100%; margin-top: 10px;">
+                            <p><small>Red dot represents the full document embedding, blue dots represent individual sentences.</small></p>
+                        </div>
+                        {% endif %}
+                        
+                        <h3>Embedding Vector (Partial)</h3>
+                        <div class="embedding-vector">{{ embedding.display_embedding|tojson }}</div>
+                        <p><small>Showing first 20 dimensions of {{ embedding.dimensions }} total dimensions</small></p>
                     </div>
                 </div>
                 {% endif %}

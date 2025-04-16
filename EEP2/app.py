@@ -5,6 +5,7 @@ import json
 import mimetypes
 from werkzeug.utils import secure_filename
 import base64
+import logging
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -18,6 +19,8 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # Service URLs
 IEP_PARSE_URL = os.environ.get('IEP_PARSE_URL', 'http://localhost:5003') + '/parse'
 IEP_EMBED_URL = os.environ.get('IEP_EMBED_URL', 'http://localhost:5004') + '/embed'
+
+logger = logging.getLogger(__name__)
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -82,21 +85,40 @@ def upload_file():
             embedding_result = None
             if parsed_text:
                 try:
+                    # Increase timeout from 30 to 120 seconds
+                    logger.info(f"Sending text to embedding service (length: {len(parsed_text)} chars)")
                     embed_response = requests.post(
                         IEP_EMBED_URL,
                         json={'text': parsed_text},
-                        timeout=30
+                        timeout=120
                     )
                     
                     if embed_response.status_code == 200:
                         embedding_result = embed_response.json()
+                        logger.info(f"Successfully received embedding with {embedding_result.get('dimensions', 'unknown')} dimensions")
                     else:
+                        logger.error(f"Embedding service error: {embed_response.text}")
                         return render_template('results.html', 
                                              parsed_text=parsed_text,
                                              images=images,
                                              ocr_texts=ocr_texts,
                                              error_embed=f"Embedding error: {embed_response.text}")
+                except requests.Timeout:
+                    logger.error("Timeout while connecting to embedding service")
+                    return render_template('results.html', 
+                                         parsed_text=parsed_text,
+                                         images=images,
+                                         ocr_texts=ocr_texts,
+                                         error_embed=f"Embedding service timeout after 120 seconds. The text might be too large to process.")
+                except requests.ConnectionError:
+                    logger.error("Connection error to embedding service")
+                    return render_template('results.html', 
+                                         parsed_text=parsed_text,
+                                         images=images,
+                                         ocr_texts=ocr_texts,
+                                         error_embed=f"Could not connect to embedding service. Make sure it's running at {IEP_EMBED_URL}")
                 except requests.RequestException as e:
+                    logger.error(f"Request error to embedding service: {str(e)}")
                     return render_template('results.html', 
                                          parsed_text=parsed_text,
                                          images=images,
