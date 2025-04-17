@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Your Optimized Schedule</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/calendar.css') }}" />
+</head>
+<body>
+  <div class="container">
+    <h1>My Weekly Schedule</h1>
+    <div id="scheduleOutput"></div>
+  </div>
+
+  <!-- force reload of updated main.js -->
+  <script src="{{ url_for('static', filename='js/main.js') }}?v=2"></script>
+  <script src="{{ url_for('static', filename='js/main.js') }}?v=2"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const raw = JSON.parse(localStorage.getItem('currentSchedule') || 'null');
+      console.log('🔍 raw schedule-only JSON:', raw);
+  
+      // If the saved object is the full EEP1 response wrapper, pull out .schedule
+      const sched = raw && raw.schedule && raw.schedule.generated_calendar
+        ? raw.schedule
+        : raw;
+  
+      if (!sched || !sched.generated_calendar) {
+        document.getElementById('scheduleOutput').innerHTML =
+          '<div class="error-message">No valid schedule found. Please generate one first.</div>';
+        return;
+      }
+  
+      console.log('✅ using schedule object for calendar:', sched);
+      displayFormattedSchedule(sched);
+    });
+  </script>
+  
+
+</body>
+</html>

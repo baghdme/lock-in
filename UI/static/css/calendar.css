@@ -1,0 +1,63 @@
+/* ── Calendar grid container ── */
+.calendar-container {
+    display: grid;
+    /* 1st col = time labels, next 7 = days */
+    grid-template-columns: 80px repeat(7, 1fr);
+    /* 1 header row + N hourly rows (set via JS) */
+    /* fallback row height if JS misses */
+    grid-auto-rows: 60px;
+    border: 1px solid #ddd;
+    background: #fff;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  /* ── Day headers ── */
+  .calendar-container .day-header {
+    grid-row: 1;
+    text-align: center;
+    background: #fafafa;
+    border-bottom: 1px solid #ddd;
+    font-weight: bold;
+    line-height: 60px;
+    padding: 0 .5rem;
+    font-size: .95rem;
+    color: #333;
+  }
+  
+  /* ── Time labels (left column) ── */
+  .calendar-container .time-label {
+    grid-column: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid #eee;
+    font-size: .9rem;
+    color: #555;
+    padding: 0 .25rem;
+  }
+  
+  /* ── Blank day cells ── */
+  .calendar-container .day-cell {
+    border-left: 1px solid #eee;
+    border-bottom: 1px solid #eee;
+  }
+  
+  /* ── Event blocks ── */
+  .calendar-container .event-block {
+    position: relative;
+    background: rgba(52,152,219,0.2);
+    border-left: 4px solid #3498db;
+    border-radius: 4px;
+    padding: 4px 6px;
+    overflow: hidden;
+    font-size: .85rem;
+    color: #222;
+  }
+  
+  /* Remove that default top‑left box background */
+  .calendar-container > .time-label:first-child {
+    background: transparent;
+    border: none;
+  }
+  

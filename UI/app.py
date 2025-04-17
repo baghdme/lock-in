@@ -42,6 +42,10 @@ logger.debug(f"Using AUTH_SERVICE_URL: {AUTH_SERVICE_URL}")
 def index():
     return render_template('index.html')
 
+@app.route('/schedule-only')
+def schedule_only():
+    return render_template('schedule-only.html')
+
 @app.route('/parse-schedule', methods=['POST'])
 def parse_schedule():
     global current_schedule
@@ -84,32 +88,6 @@ def parse_schedule():
         return jsonify({'error': str(e)}), 500
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/modify-schedule', methods=['POST'])
-def modify_schedule():
-    global current_schedule
-    try:
-        data = request.get_json()
-        if not data or 'text' not in data:
-            return jsonify({'error': 'No text provided'}), 400
-
-        response = requests.post(f'{EEP1_URL}/modify-schedule', json=data, timeout=30)
-        response.raise_for_status()
-        response_data = response.json()
-        
-        # Store the schedule
-        if 'schedule' in response_data:
-            current_schedule = response_data['schedule']
-            logger.info("Updated current schedule from modify-schedule")
-            
-        return jsonify(response_data)
-
-    except requests.exceptions.Timeout:
-        return jsonify({'error': 'Request timed out'}), 504
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': str(e)}), 500
-    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/get-schedule', methods=['GET'])

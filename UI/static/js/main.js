@@ -387,38 +387,30 @@ function submitPreferences() {
     }, 300);
 }
 
+// --- UPDATED generateOptimizedSchedule ---
+// --- UPDATED generateOptimizedSchedule ---
 function generateOptimizedSchedule() {
     const scheduleOutput = document.getElementById('scheduleOutput');
     scheduleOutput.innerHTML = '<div class="info-message">Generating your optimized schedule...</div>';
     
-    fetch('http://localhost:5002/generate-optimized-schedule', {
+    fetch('/generate-optimized-schedule', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             schedule: currentSchedule,
             preferences: userPreferences
         }),
     })
     .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
         return response.json();
     })
     .then(data => {
-        console.log('Optimized schedule:', data);
-        if (data.schedule) {
-            currentSchedule = data.schedule;
-            localStorage.setItem('currentSchedule', JSON.stringify(currentSchedule));
-            preferencesSubmitted = true;
-            
-            // Display the optimized schedule
-            displayFormattedSchedule(currentSchedule);
-        } else {
-            throw new Error('No schedule data received');
-        }
+        if (!data.schedule) throw new Error('No schedule data received');
+        currentSchedule = data.schedule;
+        localStorage.setItem('currentSchedule', JSON.stringify(currentSchedule));
+        // redirect to standalone schedule view
+        window.location.href = '/schedule-only';
     })
     .catch(error => {
         console.error('Error:', error);
@@ -426,138 +418,103 @@ function generateOptimizedSchedule() {
     });
 }
 
-// --- DISPLAY FUNCTIONS ---
+// --- UPDATED displayFormattedSchedule ---
+// in your main.js
 
-// Main function: displays the formatted schedule.
-// Expects a JSON object ("data") that includes a "schedule" property.
-// If data.schedule.generated_calendar exists, it displays a day-by-day view,
-// otherwise it uses a simpler list view.
-// --- DISPLAY FUNCTIONS ---
-
-// Main function: displays the formatted schedule.
-// Expects a JSON object ("data") that includes a "schedule" property.
-// If data.schedule.generated_calendar exists, it displays a day-by-day view,
-// otherwise it uses a simpler list view.
-function displayFormattedSchedule(data) {
-    const scheduleOutput = document.getElementById('scheduleOutput');
-    // Clear any previous content
-    scheduleOutput.innerHTML = '';
-
-    // Create a heading
-    const heading = document.createElement('h3');
-    heading.textContent = 'Your Optimized Schedule';
-    scheduleOutput.appendChild(heading);
-
-    // If the JSON doesn’t include generated_calendar, fall back to simple view
-    if (!data.schedule || !data.schedule.generated_calendar) {
-        displaySimpleSchedule(data);
-        return;
-    }
-
-    // Build a calendar (day-by-day) view
-    const calendarContainer = document.createElement('div');
-    calendarContainer.className = 'calendar-view';
-
-    // Define the order of days
-    const dayOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-
-    dayOrder.forEach(day => {
-        // Grab the events for this day, or an empty array if none exist
-        const dayEvents = data.schedule.generated_calendar[day] || [];
-
-        // Create container for the day
-        const dayContainer = document.createElement('div');
-        dayContainer.className = 'schedule-day';
-
-        // Create day header
-        const dayHeader = document.createElement('h4');
-        dayHeader.className = 'day-header';
-        dayHeader.textContent = day;
-        dayContainer.appendChild(dayHeader);
-
-        // If no events, show a "No events" message
-        if (dayEvents.length === 0) {
-            const noEventsMsg = document.createElement('p');
-            noEventsMsg.className = 'no-events';
-            noEventsMsg.textContent = 'No events.';
-            dayContainer.appendChild(noEventsMsg);
-        } else {
-            // Sort events by start time (assumes "HH:MM" format)
-            dayEvents.sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
-
-            // Create a list container for events
-            const eventsList = document.createElement('ul');
-            eventsList.className = 'day-events';
-
-            // Populate events list
-            dayEvents.forEach(event => {
-                const eventItem = document.createElement('li');
-                eventItem.className = `schedule-event event-type-${event.type || 'default'}`;
-
-                // Optional colored marker based on event type
-                const typeMarker = document.createElement('span');
-                typeMarker.className = `type-marker type-${event.type || 'default'}`;
-                eventItem.appendChild(typeMarker);
-
-                // Create an element to hold event details
-                const eventContent = document.createElement('div');
-                eventContent.className = 'event-content';
-
-                // Add event title/description
-                const eventTitle = document.createElement('div');
-                eventTitle.className = 'event-title';
-                eventTitle.textContent = event.description;
-                eventContent.appendChild(eventTitle);
-
-                // Add event details container
-                const eventDetails = document.createElement('div');
-                eventDetails.className = 'event-details';
-
-                // Add time information (start & end times, duration)
-                const timeInfo = document.createElement('div');
-                timeInfo.className = 'time-info';
-                if (event.start_time && event.end_time) {
-                    timeInfo.innerHTML = `<span class="time">${formatTime(event.start_time)} - ${formatTime(event.end_time)}</span>`;
-                }
-                if (event.duration) {
-                    timeInfo.innerHTML += `<span class="duration">(${formatDuration(event.duration)})</span>`;
-                }
-                eventDetails.appendChild(timeInfo);
-
-                // Add location if available
-                if (event.location) {
-                    const locationInfo = document.createElement('div');
-                    locationInfo.className = 'location-info';
-                    locationInfo.textContent = event.location;
-                    eventDetails.appendChild(locationInfo);
-                }
-                
-                // Add course code if available
-                if (event.course_code) {
-                    const courseInfo = document.createElement('div');
-                    courseInfo.className = 'course-info';
-                    courseInfo.textContent = event.course_code;
-                    eventDetails.appendChild(courseInfo);
-                }
-
-                // Append details to event content and add to the event item
-                eventContent.appendChild(eventDetails);
-                eventItem.appendChild(eventContent);
-                eventsList.appendChild(eventItem);
-            });
-
-            // Append events list to the day container
-            dayContainer.appendChild(eventsList);
-        }
-
-        // Append each day container to the overall calendar container
-        calendarContainer.appendChild(dayContainer);
+function displayFormattedSchedule(schedule) {
+    const container = document.getElementById('scheduleOutput');
+    container.innerHTML = '';
+    container.className = 'calendar-container';
+  
+    // 1) compute dynamic start/end hours
+    let minTime = Infinity, maxTime = -Infinity;
+    Object.values(schedule.generated_calendar || {}).forEach(dayEvents => {
+      dayEvents.forEach(ev => {
+        const [sh, sm] = ev.start_time.split(':').map(Number);
+        const [eh, em] = ev.end_time.split(':').map(Number);
+        minTime = Math.min(minTime, sh + sm/60);
+        maxTime = Math.max(maxTime, eh + em/60);
+      });
     });
-
-    // Append the complete calendar to the output element
-    scheduleOutput.appendChild(calendarContainer);
-}
-
+    if (!isFinite(minTime)) [minTime, maxTime] = [9, 17];
+    const startHour = Math.floor(minTime);
+    const endHour   = Math.ceil(maxTime);
+  
+    const days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+    const hourCount = endHour - startHour + 1;
+  
+    // 2) set up row sizing: 1 auto header + N × 60px
+    container.style.gridTemplateRows = `auto repeat(${hourCount}, 60px)`;
+  
+    // 3) build header row
+    // top‑left blank
+    const corner = document.createElement('div');
+    corner.className = 'time-label';
+    container.appendChild(corner);
+    // day names
+    days.forEach((day, i) => {
+      const dh = document.createElement('div');
+      dh.className = 'day-header';
+      dh.textContent = day;
+      dh.style.gridColumnStart = i+2;
+      container.appendChild(dh);
+    });
+  
+    // 4) build left time labels + blank cells
+    for (let i = 0; i <= endHour - startHour; i++) {
+      const hour = startHour + i;
+      // time label
+      const tl = document.createElement('div');
+      tl.className = 'time-label';
+      tl.style.gridRowStart = i+2;
+      tl.textContent = formatTime(`${String(hour).padStart(2,'0')}:00`)
+                      .replace(':00','')
+                      .replace(' ','');
+      container.appendChild(tl);
+      // blank cells for each day
+      days.forEach((_, d) => {
+        const cell = document.createElement('div');
+        cell.className = 'day-cell';
+        cell.style.gridRowStart = i+2;
+        cell.style.gridColumnStart = d+2;
+        container.appendChild(cell);
+      });
+    }
+  
+    // 5) drop in each event
+    days.forEach((day, di) => {
+      (schedule.generated_calendar[day] || []).forEach(ev => {
+        const [sh, sm] = ev.start_time.split(':').map(Number);
+        const [eh, em] = ev.end_time.split(':').map(Number);
+        // compute fractional row positions
+        const rowStart = (sh + sm/60 - startHour) + 2;
+        const rowEnd   = (eh + em/60   - startHour) + 2;
+  
+        // format labels like "9–11 AM"
+        const startLabel = formatTime(ev.start_time)
+                              .replace(':00','')
+                              .replace(' ','');
+        const endLabel   = formatTime(ev.end_time)
+                              .replace(':00','')
+                              .replace(' ','');
+        const title = `${startLabel}–${endLabel}`;
+  
+        const blk = document.createElement('div');
+        blk.className = 'event-block';
+        blk.style.gridColumnStart = di + 2;
+        blk.style.gridColumnEnd   = di + 3;
+        blk.style.gridRowStart    = Math.floor(rowStart);
+        blk.style.gridRowEnd      = Math.ceil(rowEnd);
+        blk.innerHTML = `
+          <div><strong>${title}</strong></div>
+          <div>${ev.description}</div>
+        `;
+        container.appendChild(blk);
+      });
+    });
+  }
+  
+  
 // Fallback simple schedule view when there is no generated_calendar
 function displaySimpleSchedule(data) {
     const scheduleOutput = document.getElementById('scheduleOutput');
