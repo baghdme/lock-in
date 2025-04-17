@@ -1,10 +1,13 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for, flash
 from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
 import requests
 import os
 from dotenv import load_dotenv
 import logging
 import uuid
+from functools import wraps
 
 # Configure logging
 logging.basicConfig(
@@ -18,6 +21,32 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = "supersecretkey"
+
+# Database configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Initialize database
+db = SQLAlchemy(app)
+
+# Define User model
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password = db.Column(db.String(255), nullable=False)
+    first_name = db.Column(db.String(64), nullable=False)
+    last_name = db.Column(db.String(64), nullable=False)
+    
+    def __repr__(self):
+        return f'<User {self.email}>'
+
+# Create database tables
+with app.app_context():
+    # Only create tables if they don't exist
+    db.create_all()
+    logger.info("Database tables have been initialized")
+
 CORS(app, resources={
     r"/*": {
         "origins": ["http://localhost:5002", "http://127.0.0.1:5002"],
@@ -38,15 +67,38 @@ logger.debug(f"Using EEP1_URL: {EEP1_URL}")
 logger.debug(f"Using IEP2_URL: {IEP2_URL}")
 logger.debug(f"Using AUTH_SERVICE_URL: {AUTH_SERVICE_URL}")
 
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.before_request
+def require_login():
+    # List of allowed endpoint prefixes that don't require login
+    allowed = ['login', 'register', 'static']
+    # If no endpoint is set, return (could be 404)
+    if not request.endpoint:
+        return
+
+    # If user is not in session and the endpoint does not start with any allowed prefix, redirect to login
+    if 'user' not in session and not any(request.endpoint.startswith(ep) for ep in allowed):
+        return redirect(url_for('login'))
+
 @app.route('/')
+@login_required
 def index():
     return render_template('index.html')
 
 @app.route('/schedule-only')
+@login_required
 def schedule_only():
     return render_template('schedule-only.html')
 
 @app.route('/parse-schedule', methods=['POST'])
+@login_required
 def parse_schedule():
     global current_schedule
     try:
@@ -91,6 +143,7 @@ def parse_schedule():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/get-schedule', methods=['GET'])
+@login_required
 def get_schedule():
     try:
         if current_schedule:
@@ -108,6 +161,7 @@ def get_schedule():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/answer-question', methods=['POST'])
+@login_required
 def answer_question():
     """Answer a question about missing information in the schedule"""
     global current_schedule
@@ -272,6 +326,7 @@ def check_missing_info(schedule: dict) -> list:
     return questions
 
 @app.route('/preference-questions', methods=['GET'])
+@login_required
 def preference_questions():
     """Get preference questions from EEP1."""
     global current_schedule
@@ -330,6 +385,7 @@ def preference_questions():
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route('/generate-optimized-schedule', methods=['POST'])
+@login_required
 def generate_optimized_schedule():
     """Generate an optimized schedule using EEP1 service, which will call IEP2."""
     global current_schedule
@@ -406,6 +462,98 @@ def generate_optimized_schedule():
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == "GET":
+        # If user is already logged in, redirect to index
+        if 'user' in session:
+            return redirect(url_for('index'))
+        return render_template('login.html', error=None, success=None)
+    else:
+        email = request.form.get('email')
+        password = request.form.get('password')
+        
+        try:
+            user = User.query.filter_by(email=email).first()
+            
+            if not user:
+                logger.info(f"Login attempt with non-existent email: {email}")
+                flash('Email address not found.')
+                return render_template('login.html', error='Email address not found.', success=None)
+            
+            # Check if the password matches
+            if not check_password_hash(user.password, password):
+                logger.info(f"Failed login attempt for user: {email}")
+                flash('Incorrect password.')
+                return render_template('login.html', error='Incorrect password.', success=None)
+                
+            # Success! Set up the session
+            session['user'] = email
+            session['first_name'] = user.first_name
+            logger.info(f"User logged in successfully: {email}")
+            return redirect(url_for('index'))
+            
+        except Exception as e:
+            logger.error(f"Login error: {str(e)}")
+            flash('An error occurred during login.')
+            return render_template('login.html', error='Login failed. Please try again.', success=None)
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == "GET":
+        # If user is already logged in, redirect to index
+        if 'user' in session:
+            return redirect(url_for('index'))
+        return render_template('login.html', error=None)
+    else:
+        email = request.form.get('email')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+        first_name = request.form.get('first_name')
+        last_name = request.form.get('last_name')
+        
+        # Validate required fields
+        if not all([email, password, confirm_password, first_name, last_name]):
+            flash('All fields are required.')
+            return render_template('login.html', error='All fields are required.')
+        
+        if password != confirm_password:
+            flash('Passwords do not match.')
+            return render_template('login.html', error='Passwords do not match.')
+        
+        existing_user = User.query.filter_by(email=email).first()
+        if existing_user:
+            flash('Email already exists.')
+            return render_template('login.html', error='Email address already exists.')
+            
+        # Create new user with hashed password
+        hashed_password = generate_password_hash(password)
+        new_user = User(
+            email=email, 
+            password=hashed_password,
+            first_name=first_name,
+            last_name=last_name
+        )
+        
+        try:
+            db.session.add(new_user)
+            db.session.commit()
+            # Automatically log in the user after registration
+            session['user'] = email
+            session['first_name'] = first_name
+            logger.info(f"User registered and logged in successfully: {email}")
+            return redirect(url_for('index'))
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error registering user: {str(e)}")
+            flash('An error occurred during registration.')
+            return render_template('login.html', error='Registration failed. Please try again.')
+
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    return redirect(url_for('login'))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5002, debug=True) 

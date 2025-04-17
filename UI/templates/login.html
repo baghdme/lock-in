@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login / Register</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Login Panel (Left Side) -->
+    <div class="login-panel">
+      <h2 id="form-title">Sign in</h2>
+      
+      <!-- Error Message Area -->
+      {% if error %}
+      <div class="error-message">
+        {{ error }}
+      </div>
+      {% endif %}
+      
+      <!-- Success Message Area -->
+      {% if success %}
+      <div class="success-message">
+        {{ success }}
+      </div>
+      {% endif %}
+      
+      <!-- Social Login Icons -->
+      <div class="social-icons">
+        <a href="#" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>
+        <a href="#" aria-label="Google Plus"><i class="fab fa-google-plus-g"></i></a>
+        <a href="#" aria-label="LinkedIn"><i class="fab fa-linkedin-in"></i></a>
+      </div>
+      
+      <div class="divider">or use your account</div>
+      
+      <!-- Login Form -->
+      <form id="login-form" class="active" method="POST" action="/login">
+        <div class="form-group">
+          <input type="email" name="email" placeholder="Email" required>
+        </div>
+        <div class="form-group">
+          <input type="password" name="password" placeholder="Password" required>
+        </div>
+        <div class="forgot-password">
+          <a href="#">Forgot your password?</a>
+        </div>
+        <button type="submit">SIGN IN</button>
+      </form>
+      
+      <!-- Register Form -->
+      <form id="register-form" method="POST" action="/register">
+        <div class="form-group">
+          <input type="text" name="first_name" placeholder="First Name" required>
+        </div>
+        <div class="form-group">
+          <input type="text" name="last_name" placeholder="Last Name" required>
+        </div>
+        <div class="form-group">
+          <input type="email" name="email" placeholder="Email" required>
+        </div>
+        <div class="form-group">
+          <input type="password" name="password" placeholder="Password" required>
+        </div>
+        <div class="form-group">
+          <input type="password" name="confirm_password" placeholder="Confirm Password" required>
+        </div>
+        <button type="submit">SIGN UP</button>
+      </form>
+    </div>
+    
+    <!-- Welcome Panel (Right Side) -->
+    <div class="welcome-panel">
+      <h2>Welcome to Lock-In</h2>
+      <p>Your personal schedule optimizer to help you make the most of your time</p>
+      <button class="toggle-btn" id="toggle-btn" onclick="toggleForms()">SIGN UP</button>
+    </div>
+  </div>
+
+  <script>
+    // Initialize by showing only one form
+    document.addEventListener('DOMContentLoaded', function() {
+      document.getElementById('login-form').classList.add('active');
+      document.getElementById('register-form').classList.remove('active');
+    });
+
+    function toggleForms() {
+      var loginForm = document.getElementById('login-form');
+      var registerForm = document.getElementById('register-form');
+      var formTitle = document.getElementById('form-title');
+      var toggleBtn = document.getElementById('toggle-btn');
+      var welcomeHeading = document.querySelector('.welcome-panel h2');
+      var welcomeText = document.querySelector('.welcome-panel p');
+      
+      if(loginForm.classList.contains('active')) {
+        // Switch to Register
+        loginForm.classList.remove('active');
+        registerForm.classList.add('active');
+        formTitle.textContent = 'Create Account';
+        toggleBtn.textContent = 'SIGN IN';
+        welcomeHeading.textContent = 'Join Lock-In';
+        welcomeText.textContent = 'Create an account to start optimizing your schedule and maximizing productivity';
+      } else {
+        // Switch to Login
+        registerForm.classList.remove('active');
+        loginForm.classList.add('active');
+        formTitle.textContent = 'Sign in';
+        toggleBtn.textContent = 'SIGN UP';
+        welcomeHeading.textContent = 'Welcome to Lock-In';
+        welcomeText.textContent = 'Your personal schedule optimizer to help you make the most of your time';
+      }
+    }
+  </script>
+</body>
+</html> 
