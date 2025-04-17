@@ -436,23 +436,23 @@ function displayFormattedSchedule(schedule) {
         maxTime = Math.max(maxTime, eh + em/60);
       });
     });
-    if (!isFinite(minTime)) [minTime, maxTime] = [9, 17];
+    if (!isFinite(minTime)) [minTime, maxTime] = [9,17];
     const startHour = Math.floor(minTime);
     const endHour   = Math.ceil(maxTime);
   
     const days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
     const hourCount = endHour - startHour + 1;
   
-    // 2) set up row sizing: 1 auto header + N × 60px
+    // 2) set up rows: header + each hour at 60px
     container.style.gridTemplateRows = `auto repeat(${hourCount}, 60px)`;
   
-    // 3) build header row
-    // top‑left blank
+    // 3) headers
+    // corner
     const corner = document.createElement('div');
     corner.className = 'time-label';
     container.appendChild(corner);
     // day names
-    days.forEach((day, i) => {
+    days.forEach((day,i) => {
       const dh = document.createElement('div');
       dh.className = 'day-header';
       dh.textContent = day;
@@ -460,19 +460,18 @@ function displayFormattedSchedule(schedule) {
       container.appendChild(dh);
     });
   
-    // 4) build left time labels + blank cells
-    for (let i = 0; i <= endHour - startHour; i++) {
+    // 4) time labels + blank cells
+    for (let i=0; i<=endHour-startHour; i++) {
       const hour = startHour + i;
-      // time label
+      // label
       const tl = document.createElement('div');
       tl.className = 'time-label';
       tl.style.gridRowStart = i+2;
       tl.textContent = formatTime(`${String(hour).padStart(2,'0')}:00`)
-                      .replace(':00','')
-                      .replace(' ','');
+                       .replace(':00','').replace(' ','');
       container.appendChild(tl);
-      // blank cells for each day
-      days.forEach((_, d) => {
+      // blanks
+      days.forEach((_,d) => {
         const cell = document.createElement('div');
         cell.className = 'day-cell';
         cell.style.gridRowStart = i+2;
@@ -481,33 +480,33 @@ function displayFormattedSchedule(schedule) {
       });
     }
   
-    // 5) drop in each event
+    // 5) events
     days.forEach((day, di) => {
       (schedule.generated_calendar[day] || []).forEach(ev => {
         const [sh, sm] = ev.start_time.split(':').map(Number);
         const [eh, em] = ev.end_time.split(':').map(Number);
-        // compute fractional row positions
         const rowStart = (sh + sm/60 - startHour) + 2;
         const rowEnd   = (eh + em/60   - startHour) + 2;
   
-        // format labels like "9–11 AM"
+        // format "9–11 AM"
         const startLabel = formatTime(ev.start_time)
-                              .replace(':00','')
-                              .replace(' ','');
+                              .replace(':00','').replace(' ','');
         const endLabel   = formatTime(ev.end_time)
-                              .replace(':00','')
-                              .replace(' ','');
+                              .replace(':00','').replace(' ','');
         const title = `${startLabel}–${endLabel}`;
   
         const blk = document.createElement('div');
         blk.className = 'event-block';
-        blk.style.gridColumnStart = di + 2;
-        blk.style.gridColumnEnd   = di + 3;
+        blk.style.gridColumnStart = di+2;
+        blk.style.gridColumnEnd   = di+3;
         blk.style.gridRowStart    = Math.floor(rowStart);
         blk.style.gridRowEnd      = Math.ceil(rowEnd);
+  
+        // build inner HTML, including course_code if present
         blk.innerHTML = `
           <div><strong>${title}</strong></div>
           <div>${ev.description}</div>
+          ${ev.course_code ? `<div class="course-code">Course: ${ev.course_code}</div>` : ''}
         `;
         container.appendChild(blk);
       });
