@@ -488,12 +488,15 @@ function displayFormattedSchedule(schedule) {
         const rowStart = (sh + sm/60 - startHour) + 2;
         const rowEnd   = (eh + em/60   - startHour) + 2;
   
-        // format "9–11 AM"
+        // format "9–11 AM"
         const startLabel = formatTime(ev.start_time)
                               .replace(':00','').replace(' ','');
         const endLabel   = formatTime(ev.end_time)
                               .replace(':00','').replace(' ','');
         const title = `${startLabel}–${endLabel}`;
+        
+        // Simplify event description to just show basic type
+        const simpleDescription = getSimpleEventType(ev);
   
         const blk = document.createElement('div');
         blk.className = 'event-block';
@@ -502,11 +505,11 @@ function displayFormattedSchedule(schedule) {
         blk.style.gridRowStart    = Math.floor(rowStart);
         blk.style.gridRowEnd      = Math.ceil(rowEnd);
   
-        // build inner HTML, including course_code if present
+        // build inner HTML with simplified description, keep course code if present
         blk.innerHTML = `
           <div><strong>${title}</strong></div>
-          <div>${ev.description}</div>
-          ${ev.course_code ? `<div class="course-code">Course: ${ev.course_code}</div>` : ''}
+          <div>${simpleDescription}</div>
+          ${ev.course_code ? `<div class="course-code">${ev.course_code}</div>` : ''}
         `;
         container.appendChild(blk);
       });
@@ -726,4 +729,33 @@ function createPreferenceInput(question) {
     }
     
     return inputHtml;
+}
+
+// Function to simplify event descriptions
+function getSimpleEventType(event) {
+    if (!event) return '';
+    
+    // Extract base event type
+    if (event.type === 'exam') return 'Exam';
+    if (event.type === 'presentation') return 'Presentation';
+    if (event.type === 'meeting') return 'Meeting';
+    if (event.type === 'class') return 'Class';
+    if (event.type === 'lab') return 'Lab';
+    if (event.type === 'workshop') return 'Workshop';
+    if (event.type === 'office_hours') return 'Office Hours';
+    if (event.type === 'study') return 'Study';
+    if (event.type === 'exam_preparation') return 'Exam Prep';
+    if (event.type === 'presentation_preparation') return 'Presentation Prep';
+    
+    // If no specific type, extract a short description from the event's description field
+    if (event.description) {
+        // Get first word if it's a short description
+        const firstWord = event.description.split(' ')[0];
+        if (firstWord.length < 10) return firstWord;
+        
+        // Or return first 10 chars if it's a long word/phrase
+        return event.description.substring(0, 10) + '...';
+    }
+    
+    return 'Event';
 }
