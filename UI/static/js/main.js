@@ -483,87 +483,90 @@ function displayFormattedSchedule(schedule) {
       });
     }
   
-    // 5) events
+    // 5) events - Create events and position them correctly with CSS grid
     days.forEach((day, di) => {
-      (schedule.generated_calendar[day] || []).forEach(ev => {
+      const dayEvents = schedule.generated_calendar[day] || [];
+      
+      dayEvents.forEach(ev => {
+        // Parse times
         const [sh, sm] = ev.start_time.split(':').map(Number);
         const [eh, em] = ev.end_time.split(':').map(Number);
         
-        // Calculate exact positions for absolute positioning
-        const startTimeDecimal = sh + sm/60 - startHour;
-        const endTimeDecimal = eh + em/60 - startHour;
+        // Calculate grid row positions
+        const startRow = (sh - startHour) + (sm / 60) + 2;
+        const endRow = (eh - startHour) + (em / 60) + 2;
         
-        // Create positioning values
-        const top = (startTimeDecimal * hourRowHeight) + hourRowHeight; // Add header height
-        const height = (endTimeDecimal - startTimeDecimal) * hourRowHeight;
-        
-        // format "9–11 AM"
-        const startLabel = formatTime(ev.start_time)
-                              .replace(':00','').replace(' ','');
-        const endLabel   = formatTime(ev.end_time)
-                              .replace(':00','').replace(' ','');
+        // Format time for display
+        const startLabel = formatTime(ev.start_time).replace(':00','').replace(' ','');
+        const endLabel = formatTime(ev.end_time).replace(':00','').replace(' ','');
         const title = `${startLabel}–${endLabel}`;
         
-        // Simplify event description to just show basic type
+        // Get simplified event description
         const simpleDescription = getSimpleEventType(ev);
-  
-        const blk = document.createElement('div');
-        blk.className = 'event-block';
         
-        // Position absolutely - attach to proper day column
-        const dayColumn = document.querySelector(`.day-cell:nth-child(${di+8})`); // +1 for time label, +7 for days
-        if (dayColumn) {
-          const columnIndex = di + 2; // +2 for 1-indexed and time column
-          
-          // Add event type class if available
-          if (ev.type) {
-            blk.classList.add(ev.type.toLowerCase());
-          }
-          
-          // Position using absolute coordinates
-          blk.style.left = `0px`;
-          blk.style.top = `${top}px`;
-          blk.style.height = `${height}px`;
-          blk.style.width = `calc(100% - 10px)`;
+        // Create the event element
+        const eventElement = document.createElement('div');
+        eventElement.className = 'event-block';
         
-          // build inner HTML with simplified description, keep course code if present
-          blk.innerHTML = `
-            <div><strong>${title}</strong></div>
-            <div>${simpleDescription}</div>
-            ${ev.course_code ? `<div class="course-code">${ev.course_code}</div>` : ''}
-          `;
-          
-          // Find the correct day column and append
-          const dayColumns = container.querySelectorAll('.day-cell');
-          const dayColumnCells = Array.from(dayColumns).filter(cell => 
-            cell.style.gridColumnStart === columnIndex.toString()
-          );
-          
-          if (dayColumnCells.length > 0) {
-            // Add to the first cell of that day (will position absolutely)
-            dayColumnCells[0].appendChild(blk);
-          } else {
-            // Fallback to just appending to container
-            container.appendChild(blk);
-          }
-        } else {
-          // Fallback to grid positioning if day column not found
-          blk.style.gridColumnStart = di+2;
-          blk.style.gridColumnEnd = di+3;
-          blk.style.gridRowStart = Math.floor(startTimeDecimal) + 2;
-          blk.style.gridRowEnd = Math.ceil(endTimeDecimal) + 2;
-          
-          // build inner HTML with simplified description, keep course code if present
-          blk.innerHTML = `
-            <div><strong>${title}</strong></div>
-            <div>${simpleDescription}</div>
-            ${ev.course_code ? `<div class="course-code">${ev.course_code}</div>` : ''}
-          `;
-          container.appendChild(blk);
+        // Add event type as a class if available
+        if (ev.type) {
+          eventElement.classList.add(ev.type.toLowerCase());
         }
+        
+        // Build the HTML content
+        eventElement.innerHTML = `
+          <div><strong>${title}</strong></div>
+          <div>${simpleDescription}</div>
+          ${ev.course_code ? `<div class="course-code">${ev.course_code}</div>` : ''}
+        `;
+        
+        // Position using grid
+        eventElement.style.gridColumnStart = di + 2; // +2 for time label column
+        eventElement.style.gridColumnEnd = di + 3;
+        eventElement.style.gridRowStart = startRow;
+        eventElement.style.gridRowEnd = endRow;
+        
+        // Add to the container
+        container.appendChild(eventElement);
       });
     });
-  }
+    
+    // Adjust event styling for proper display
+    const styleElement = document.createElement('style');
+    styleElement.textContent = `
+      .calendar-container {
+        display: grid;
+        grid-template-columns: 70px repeat(7, 1fr);
+        position: relative;
+      }
+      .calendar-container .event-block {
+        position: relative !important;
+        background: rgba(51, 153, 255, 0.1);
+        border-left: 4px solid #3399ff;
+        border-radius: 6px;
+        padding: 10px 12px;
+        font-size: 0.9rem;
+        color: #333;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        margin: 2px;
+        z-index: 10;
+      }
+      .calendar-container .event-block.exam {
+        background: rgba(239, 71, 111, 0.1);
+        border-left: 4px solid #ef476f;
+      }
+      .calendar-container .event-block.study,
+      .calendar-container .event-block.prepare {
+        background: rgba(255, 209, 102, 0.1);
+        border-left: 4px solid #ffd166;
+      }
+      .calendar-container .event-block.meeting {
+        background: rgba(118, 120, 237, 0.1);
+        border-left: 4px solid #7678ed;
+      }
+    `;
+    document.head.appendChild(styleElement);
+}
   
   
 // Fallback simple schedule view when there is no generated_calendar
