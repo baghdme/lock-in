@@ -9,27 +9,36 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}" />
 </head>
 <body>
-  <div class="container" style="margin: 0 auto; max-width: 1200px;">
-    <h1 style="font-size: 1.2rem;">My Weekly Schedule</h1>
-    <div style="display: flex; gap: 20px; justify-content: flex-start; text-align: left;">
-      <div id="scheduleContainer" style="flex: 2;">
+  <div class="container" style="margin: 0 auto; max-width: 1500px; padding: 20px;">
+    <h1 style="font-size: 1.5rem; margin-bottom: 20px; color: #2c3e50;">My Weekly Schedule</h1>
+    <div style="display: flex; gap: 25px; justify-content: flex-start; text-align: left;">
+      <div id="scheduleContainer" style="flex: 4; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-radius: 12px;">
         <div id="scheduleOutput"></div>
       </div>
-      <div style="flex: 1;">
+      <div style="flex: 1; min-width: 320px; max-width: 400px;">
         <div id="chat-container">
-          <div class="chat-header">ChatBot</div>
+          <div class="chat-header">Schedule Assistant</div>
           <div id="chat-log">
             <!-- Chat messages will appear here -->
           </div>
           <div id="chat-form-container">
-            <form id="chat-form" onsubmit="sendChatMessage(); return false;">
-              <input type="text" id="user-input" placeholder="Type your message..." />
-              <button type="submit">
-                <svg width="24" height="24" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path fill-rule="evenodd" clip-rule="evenodd" d="M15.1918 8.90615C15.6381 8.45983 16.3618 8.45983 16.8081 8.90615L21.9509 14.049C22.3972 14.4953 22.3972 15.2189 21.9509 15.6652C21.5046 16.1116 20.781 16.1116 20.3347 15.6652L17.1428 12.4734V22.2857C17.1428 22.9169 16.6311 23.4286 15.9999 23.4286C15.3688 23.4286 14.8571 22.9169 14.8571 22.2857V12.4734L11.6652 15.6652C11.2189 16.1116 10.4953 16.1116 10.049 15.6652C9.60265 15.2189 9.60265 14.4953 10.049 14.049L15.1918 8.90615Z" fill="currentColor"></path>
-                </svg>
-              </button>
-            </form>
+            <div style="position: relative; width: 100%;">
+              <form id="chat-form" onsubmit="sendChatMessage(); return false;">
+                <div class="input-with-buttons">
+                  <button type="button" class="circular-button upload-button" aria-label="Upload file" style="background-color: #ff6b6b !important; border-radius: 50% !important; display: flex !important; align-items: center !important; justify-content: center !important; width: 36px !important; height: 36px !important; min-width: 36px !important; min-height: 36px !important; padding: 0 !important; border: none !important; margin: 2px !important; color: white !important;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="stroke: white !important;">
+                      <path d="M12 5v14M5 12h14" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                  <input type="text" id="user-input" placeholder="Ask about your schedule..." />
+                  <button type="submit" class="circular-button send-button" aria-label="Send message" style="background-color: #ff6b6b !important; border-radius: 50% !important; display: flex !important; align-items: center !important; justify-content: center !important; width: 36px !important; height: 36px !important; min-width: 36px !important; min-height: 36px !important; padding: 0 !important; border: none !important; margin: 2px !important; color: white !important;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="stroke: white !important;">
+                      <path d="M5 12h14M13 5l7 7-7 7" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       </div>
@@ -57,6 +66,27 @@
   
       console.log('✅ using schedule object for calendar:', sched);
       displayFormattedSchedule(sched);
+      
+      // Add initial welcome message
+      const chatLog = document.getElementById('chat-log');
+      const assistantContainer = document.createElement('div');
+      assistantContainer.className = 'message-container assistant-container';
+      
+      const assistantMessage = document.createElement('div');
+      assistantMessage.className = 'message assistant';
+      assistantMessage.textContent = "Welcome! I can help you understand your schedule. You can ask me things like 'What meetings do I have on Monday?' or 'When is my next exam?'";
+      
+      assistantContainer.appendChild(assistantMessage);
+      chatLog.appendChild(assistantContainer);
+
+      // Add click handler for upload button
+      const uploadButton = document.querySelector('.upload-button');
+      if (uploadButton) {
+        uploadButton.addEventListener('click', () => {
+          // In a real implementation, we would trigger a file picker here
+          alert('File upload feature would appear here!');
+        });
+      }
     });
   </script>
   
@@ -90,7 +120,17 @@
         
         const assistantMessage = document.createElement('div');
         assistantMessage.className = 'message assistant';
-        assistantMessage.textContent = "I can help you understand your schedule better. What would you like to know?";
+        
+        // Customize responses based on common schedule questions
+        if (message.toLowerCase().includes('monday')) {
+          assistantMessage.textContent = "Looking at your Monday schedule, I can see you have several items scheduled. Is there something specific about Monday you'd like to know?";
+        } else if (message.toLowerCase().includes('exam')) {
+          assistantMessage.textContent = "I can see you have an exam coming up. Would you like to know more about your exam preparation schedule?";
+        } else if (message.toLowerCase().includes('busy') || message.toLowerCase().includes('free time')) {
+          assistantMessage.textContent = "Based on your schedule, your busiest days appear to be in the middle of the week. You have more free time on weekends.";
+        } else {
+          assistantMessage.textContent = "I can help you understand your schedule better. You can ask about specific days, events, or even when you might have free time.";
+        }
         
         assistantContainer.appendChild(assistantMessage);
         chatLog.appendChild(assistantContainer);

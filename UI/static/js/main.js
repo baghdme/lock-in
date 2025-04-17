@@ -442,9 +442,12 @@ function displayFormattedSchedule(schedule) {
   
     const days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
     const hourCount = endHour - startHour + 1;
+    
+    // Cell height for calculation (match this with CSS)
+    const hourRowHeight = 70; // px, match with .day-cell height in CSS
   
-    // 2) set up rows: header + each hour at 60px
-    container.style.gridTemplateRows = `auto repeat(${hourCount}, 60px)`;
+    // 2) set up rows: header + each hour matching hourRowHeight
+    container.style.gridTemplateRows = `auto repeat(${hourCount}, ${hourRowHeight}px)`;
   
     // 3) headers
     // corner
@@ -485,9 +488,15 @@ function displayFormattedSchedule(schedule) {
       (schedule.generated_calendar[day] || []).forEach(ev => {
         const [sh, sm] = ev.start_time.split(':').map(Number);
         const [eh, em] = ev.end_time.split(':').map(Number);
-        const rowStart = (sh + sm/60 - startHour) + 2;
-        const rowEnd   = (eh + em/60   - startHour) + 2;
-  
+        
+        // Calculate exact positions for absolute positioning
+        const startTimeDecimal = sh + sm/60 - startHour;
+        const endTimeDecimal = eh + em/60 - startHour;
+        
+        // Create positioning values
+        const top = (startTimeDecimal * hourRowHeight) + hourRowHeight; // Add header height
+        const height = (endTimeDecimal - startTimeDecimal) * hourRowHeight;
+        
         // format "9–11 AM"
         const startLabel = formatTime(ev.start_time)
                               .replace(':00','').replace(' ','');
@@ -500,18 +509,58 @@ function displayFormattedSchedule(schedule) {
   
         const blk = document.createElement('div');
         blk.className = 'event-block';
-        blk.style.gridColumnStart = di+2;
-        blk.style.gridColumnEnd   = di+3;
-        blk.style.gridRowStart    = Math.floor(rowStart);
-        blk.style.gridRowEnd      = Math.ceil(rowEnd);
-  
-        // build inner HTML with simplified description, keep course code if present
-        blk.innerHTML = `
-          <div><strong>${title}</strong></div>
-          <div>${simpleDescription}</div>
-          ${ev.course_code ? `<div class="course-code">${ev.course_code}</div>` : ''}
-        `;
-        container.appendChild(blk);
+        
+        // Position absolutely - attach to proper day column
+        const dayColumn = document.querySelector(`.day-cell:nth-child(${di+8})`); // +1 for time label, +7 for days
+        if (dayColumn) {
+          const columnIndex = di + 2; // +2 for 1-indexed and time column
+          
+          // Add event type class if available
+          if (ev.type) {
+            blk.classList.add(ev.type.toLowerCase());
+          }
+          
+          // Position using absolute coordinates
+          blk.style.left = `0px`;
+          blk.style.top = `${top}px`;
+          blk.style.height = `${height}px`;
+          blk.style.width = `calc(100% - 10px)`;
+        
+          // build inner HTML with simplified description, keep course code if present
+          blk.innerHTML = `
+            <div><strong>${title}</strong></div>
+            <div>${simpleDescription}</div>
+            ${ev.course_code ? `<div class="course-code">${ev.course_code}</div>` : ''}
+          `;
+          
+          // Find the correct day column and append
+          const dayColumns = container.querySelectorAll('.day-cell');
+          const dayColumnCells = Array.from(dayColumns).filter(cell => 
+            cell.style.gridColumnStart === columnIndex.toString()
+          );
+          
+          if (dayColumnCells.length > 0) {
+            // Add to the first cell of that day (will position absolutely)
+            dayColumnCells[0].appendChild(blk);
+          } else {
+            // Fallback to just appending to container
+            container.appendChild(blk);
+          }
+        } else {
+          // Fallback to grid positioning if day column not found
+          blk.style.gridColumnStart = di+2;
+          blk.style.gridColumnEnd = di+3;
+          blk.style.gridRowStart = Math.floor(startTimeDecimal) + 2;
+          blk.style.gridRowEnd = Math.ceil(endTimeDecimal) + 2;
+          
+          // build inner HTML with simplified description, keep course code if present
+          blk.innerHTML = `
+            <div><strong>${title}</strong></div>
+            <div>${simpleDescription}</div>
+            ${ev.course_code ? `<div class="course-code">${ev.course_code}</div>` : ''}
+          `;
+          container.appendChild(blk);
+        }
       });
     });
   }

@@ -1,6 +1,6 @@
 /* ───────────────────────────────────────────────────────────────
    calendar.css — Minimal iCloud‑style Weekly Grid +
-   Soft Blue Accent (uses Inter)
+   Soft Blue Accent (uses Inter) - Enhanced for larger display
 ──────────────────────────────────────────────────────────────── */
 
 /* 1) Base font */
@@ -10,12 +10,18 @@
   font-family: 'Inter', sans-serif;
   display: grid;
   /* 1 col for times + 7 equal day columns */
-  grid-template-columns: 60px repeat(7, 1fr);
-  /* auto (header) + 1hr rows of 60px */
+  grid-template-columns: 70px repeat(7, 1fr);
+  /* auto (header) + 1hr rows of 70px for more space */
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.05);
   overflow: hidden;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 800px;
+  box-sizing: border-box;
+  position: relative;
 }
 
 /* Day headers row */
@@ -23,11 +29,11 @@
   grid-row: 1;
   text-align: center;
   font-weight: 600;
-  color: #333;
+  color: #2c3e50;
   border-bottom: 1px solid #e5e5e5;
-  padding: 12px 0;
-  font-size: 0.95rem;
-  background: #fafafa;
+  padding: 16px 0;
+  font-size: 1.1rem;
+  background: #f8f9fa;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -45,49 +51,100 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
-  color: #888;
+  font-size: 0.95rem;
+  color: #555;
   border-bottom: 1px solid #f0f0f0;
   background: #fff;
+  height: 70px; /* Taller hour rows */
+  font-weight: 500;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 4;
 }
 
 /* Blank day cells */
 .calendar-container .day-cell {
   border-left: 1px solid #f0f0f0;
   border-bottom: 1px solid #f0f0f0;
+  height: 70px; /* Taller cells */
+  box-sizing: border-box;
+  position: relative;
 }
 
-/* Event blocks */
+/* Highlight current day */
+.calendar-container .day-header.today {
+  background-color: #f0f7ff;
+  color: #0066cc;
+}
+
+.calendar-container .day-cell.today {
+  background-color: #f9fcff;
+}
+
+/* Event blocks - with categories */
 .calendar-container .event-block {
-  position: relative;
+  position: absolute;
   background: rgba(51, 153, 255, 0.1);
   border-left: 4px solid #3399ff;
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-size: 0.82rem;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
   color: #333;
   box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  overflow: hidden;
+  width: calc(100% - 10px);
+  box-sizing: border-box;
+  z-index: 10;
+  /* Ensure even short events are visible */
+  min-height: 50px;
+  left: 0;
+}
+
+/* Different colors for different types of events */
+.calendar-container .event-block.exam {
+  background: rgba(239, 71, 111, 0.1);
+  border-left: 4px solid #ef476f;
+}
+
+.calendar-container .event-block.class {
+  background: rgba(6, 214, 160, 0.1);
+  border-left: 4px solid #06d6a0;
+}
+
+.calendar-container .event-block.study,
+.calendar-container .event-block.prepare {
+  background: rgba(255, 209, 102, 0.1);
+  border-left: 4px solid #ffd166;
+}
+
+.calendar-container .event-block.meeting {
+  background: rgba(118, 120, 237, 0.1);
+  border-left: 4px solid #7678ed;
 }
 
 /* Event title */
 .calendar-container .event-block strong {
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   font-weight: 600;
-  color: #006bb3;
-  font-size: 0.85rem;
+  color: #2c3e50;
+  font-size: 0.95rem;
 }
 
 /* Optional: hover highlight */
 .calendar-container .event-block:hover {
-  background: rgba(51, 153, 255, 0.15);
+  transform: scale(1.01);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+  transition: all 0.2s ease;
+  z-index: 15;
 }
 
 .calendar-container .event-block .course-code {
-    margin-top: 4px;
-    font-size: 0.75rem;
-    color: #555;
-    opacity: 0.8;
-  }
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: #555;
+  opacity: 0.8;
+  font-weight: 500;
+}
   
   
