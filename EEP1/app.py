@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timedelta
 from copy import deepcopy
 import logging
-from prompts import PARSING_PROMPT, MODIFY_PROMPT
+from prompts import PARSING_PROMPT
 from preference_questions import get_preference_questions, get_algorithm_questions, get_default_preferences
 from helpers import save_schedule, load_schedule, convert_to_24h, validate_and_fix_times, check_missing_info, clean_missing_info_from_tasks, clean_schedule, convert_answer_value, update_schedule_with_answers, ensure_ids, STORAGE_PATH, FINAL_PATH
 import uuid
@@ -337,6 +337,33 @@ def health():
             "status": "unhealthy",
             "error": str(e)
         }), 500
+
+# -------------------------------
+# Reset Stored Schedule Endpoint
+# -------------------------------
+@app.route('/reset-stored-schedule', methods=['POST'])
+def reset_stored_schedule():
+    import os
+    try:
+        # Delete the final schedule file
+        if os.path.exists(FINAL_PATH):
+            os.remove(FINAL_PATH)
+            logger.info("Deleted final_schedule.json")
+        else:
+            logger.info("final_schedule.json not found")
+        
+        # Delete the latest schedule file (assuming it's in the same directory)
+        latest_path = os.path.join(os.path.dirname(FINAL_PATH), 'latest_schedule.json')
+        if os.path.exists(latest_path):
+            os.remove(latest_path)
+            logger.info("Deleted latest_schedule.json")
+        else:
+            logger.info("latest_schedule.json not found")
+        
+        return jsonify({"status": "stored schedule reset"}), 200
+    except Exception as e:
+        logger.error("Error resetting stored schedule:", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True) 

@@ -45,6 +45,11 @@ let preferencesSubmitted = false;
 let allMissingInfoResolved = false;
 
 function showQuestionDialog(questions) {
+    // Remove loading overlay if it exists
+    let overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+        overlay.remove();
+    }
     if (!questions || questions.length === 0) {
         console.warn('No questions to display');
         return;
@@ -208,6 +213,47 @@ function closeDialog() {
     currentQuestionIndex = 0;
 }
 
+function setLoadingState(state) {
+    // Create an overlay div that mimics the dialog styling (centered, covering the prompt area)
+    let overlay = document.createElement('div');
+    overlay.className = 'dialog';
+    overlay.id = 'loadingOverlay';
+
+    let content = document.createElement('div');
+    content.className = 'dialog-content';
+
+    let header = document.createElement('h2');
+    if (state === 'missing_info') {
+         header.textContent = "Looking for Missing Information...";
+    } else if (state === 'preferences') {
+         header.textContent = "Gathering Your Preferences...";
+    } else if (state === 'cooking') {
+         header.textContent = "Cooking Your Schedule...";
+    } else {
+         header.textContent = "Processing...";
+    }
+    content.appendChild(header);
+
+    let spinner = document.createElement('div');
+    spinner.className = 'spinner';
+    content.appendChild(spinner);
+
+    let infoText = document.createElement('p');
+    if (state === 'missing_info') {
+         infoText.textContent = "We are collecting the missing information required.";
+    } else if (state === 'preferences') {
+         infoText.textContent = "We are gathering your preference inputs.";
+    } else if (state === 'cooking') {
+         infoText.textContent = "We are cooking your schedule!";
+    }
+    content.appendChild(infoText);
+
+    overlay.appendChild(content);
+
+    // Append the overlay to the document body, covering the prompt area
+    document.body.appendChild(overlay);
+}
+
 function generateSchedule() {
     const scheduleText = document.getElementById('scheduleText').value;
     if (!scheduleText.trim()) {
@@ -224,8 +270,7 @@ function generateSchedule() {
     submitBtn.disabled = true;
     submitBtn.innerText = 'Submitting...';
     
-    // Clear any previous output
-    document.getElementById('scheduleOutput').innerHTML = '<div class="info-message">Processing your schedule...</div>';
+    setLoadingState('missing_info');
 
     fetch('http://localhost:5002/parse-schedule', {
         method: 'POST',
@@ -274,7 +319,7 @@ function generateSchedule() {
 
 function getPreferenceQuestions() {
     const scheduleOutput = document.getElementById('scheduleOutput');
-    scheduleOutput.innerHTML = '<div class="info-message">Loading preference questions...</div>';
+    setLoadingState('preferences');
     
     // If currentSchedule is null, try to retrieve from localStorage
     if (!currentSchedule) {
@@ -391,7 +436,7 @@ function submitPreferences() {
 // --- UPDATED generateOptimizedSchedule ---
 function generateOptimizedSchedule() {
     const scheduleOutput = document.getElementById('scheduleOutput');
-    scheduleOutput.innerHTML = '<div class="info-message">Generating your optimized schedule...</div>';
+    setLoadingState('cooking');
     
     fetch('/generate-optimized-schedule', {
         method: 'POST',
@@ -810,4 +855,25 @@ function getSimpleEventType(event) {
     }
     
     return 'Event';
+}
+
+// Updated resetScheduleUI function with logging
+function resetScheduleUI() {
+    console.log('resetScheduleUI triggered');
+    fetch('/reset-schedule', {
+        method: 'POST'
+    })
+    .then(response => {
+        console.log('Reset schedule response received', response);
+        // If the response is a redirect, use it; otherwise redirect to '/' manually
+        if (response.redirected) {
+            window.location.href = response.url;
+        } else {
+            window.location.href = '/';
+        }
+    })
+    .catch(error => {
+        console.error('Error resetting schedule:', error);
+        alert('Error resetting schedule: ' + error.message);
+    });
 }

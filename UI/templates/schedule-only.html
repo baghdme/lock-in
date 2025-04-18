@@ -33,7 +33,11 @@
 
 {% block content %}
 <div class="container-schedule">
-  <h1 style="font-size: 1.5rem; margin-bottom: 20px; color: #2c3e50;">My Weekly Schedule</h1>
+  <!-- Updated header section with improved design for schedule-only.html -->
+  <div class="header-container">
+    <h1>My Weekly Schedule</h1>
+    <button onclick="resetScheduleUI()" class="reset-button">Reset Schedule</button>
+  </div>
   <div class="schedule-content">
     <div id="scheduleContainer" class="schedule-wrapper">
       <div id="scheduleOutput"></div>
@@ -74,44 +78,68 @@
 <script src="{{ url_for('static', filename='js/main.js') }}?v=2"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const raw = JSON.parse(localStorage.getItem('currentSchedule') || 'null');
+    fetch('/get-schedule')
+      .then(response => response.json())
+      .then(data => {
+        if (data.schedule && (data.schedule.generated_calendar || data.schedule.meetings || data.schedule.tasks)) {
+          localStorage.setItem('currentSchedule', JSON.stringify(data.schedule));
+          processSchedule(data.schedule);
+        } else {
+          localStorage.removeItem('currentSchedule');
+          window.location.href = '/';
+        }
+      })
+      .catch(err => {
+        console.error('Error fetching schedule from server:', err);
+        window.location.href = '/';
+      });
+  });
+
+  function processSchedule(raw) {
     console.log('🔍 raw schedule-only JSON:', raw);
-
-    // If the saved object is the full EEP1 response wrapper, pull out .schedule
-    const sched = raw && raw.schedule && raw.schedule.generated_calendar
-      ? raw.schedule
-      : raw;
-
-    if (!sched || !sched.generated_calendar) {
-      document.getElementById('scheduleOutput').innerHTML =
-        '<div class="error-message">No valid schedule found. Please generate one first.</div>';
+    // Use raw.schedule if present and if it has a generated_calendar; otherwise, use raw directly
+    const sched = (raw && raw.schedule && raw.schedule.generated_calendar) ? raw.schedule : raw;
+    // If no valid schedule object (neither a generated_calendar nor meetings/tasks), redirect
+    if (!sched || (!sched.generated_calendar && !sched.meetings && !sched.tasks)) {
+      console.warn('No valid schedule found. Redirecting to schedule generation page.');
+      window.location.href = '/';
       return;
     }
-
     console.log('✅ using schedule object for calendar:', sched);
-    displayFormattedSchedule(sched);
+    // If a generated_calendar exists, display the formatted calendar; otherwise, use the simple schedule view
+    if (sched.generated_calendar) {
+      displayFormattedSchedule(sched);
+    } else {
+      displaySimpleSchedule({ schedule: sched });
+    }
+    
+    // Fallback: if nothing is rendered in scheduleOutput after 3 seconds, show an error message
+    setTimeout(() => {
+      const outputEl = document.getElementById('scheduleOutput');
+      if (!outputEl.innerHTML.trim()) {
+        console.error('No content rendered in scheduleOutput after processing schedule.');
+        outputEl.innerHTML = '<div class="error-message">No schedule content loaded. Please generate a new schedule.</div>';
+      }
+    }, 3000);
     
     // Add initial welcome message
     const chatLog = document.getElementById('chat-log');
     const assistantContainer = document.createElement('div');
     assistantContainer.className = 'message-container assistant-container';
-    
     const assistantMessage = document.createElement('div');
     assistantMessage.className = 'message assistant';
     assistantMessage.textContent = "Welcome! I can help you understand your schedule. You can ask me things like 'What meetings do I have on Monday?' or 'When is my next exam?'";
-    
     assistantContainer.appendChild(assistantMessage);
     chatLog.appendChild(assistantContainer);
-
+    
     // Add click handler for upload button
     const uploadButton = document.querySelector('.upload-button');
     if (uploadButton) {
       uploadButton.addEventListener('click', () => {
-        // In a real implementation, we would trigger a file picker here
         alert('File upload feature would appear here!');
       });
     }
-  });
+  }
 </script>
 
 <script>

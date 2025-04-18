@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 import logging
 import uuid
 from functools import wraps
+import json
+from datetime import datetime, timedelta
 
 # Configure logging
 logging.basicConfig(
@@ -37,6 +39,8 @@ class User(db.Model):
     password = db.Column(db.String(255), nullable=False)
     first_name = db.Column(db.String(64), nullable=False)
     last_name = db.Column(db.String(64), nullable=False)
+    latest_schedule = db.Column(db.Text, nullable=True)  # New column to store latest final_schedule.json
+    schedule_timestamp = db.Column(db.DateTime, nullable=True)  # New column to store timestamp when schedule was updated
     
     def __repr__(self):
         return f'<User {self.email}>'
@@ -90,11 +94,18 @@ def require_login():
 @app.route('/')
 @login_required
 def index():
-    return render_template('index.html')
+    user = User.query.filter_by(email=session['user']).first()
+    if user and user.latest_schedule and user.schedule_timestamp and (datetime.utcnow() - user.schedule_timestamp < timedelta(days=7)):
+        return render_template('schedule-only.html')
+    else:
+        return render_template('index.html')
 
 @app.route('/schedule-only')
 @login_required
 def schedule_only():
+    user = User.query.filter_by(email=session['user']).first()
+    if not (user and user.latest_schedule and user.schedule_timestamp and (datetime.utcnow() - user.schedule_timestamp < timedelta(days=7))):
+        return redirect(url_for('index'))
     return render_template('schedule-only.html')
 
 @app.route('/parse-schedule', methods=['POST'])
@@ -127,6 +138,13 @@ def parse_schedule():
                 logger.info("Successfully stored schedule in EEP1")
             else:
                 logger.warning(f"Failed to store schedule in EEP1: {store_response.text}")
+
+            # Update user's latest_schedule in the database
+            user = User.query.filter_by(email=session['user']).first()
+            if user:
+                user.latest_schedule = json.dumps(response_data['schedule'])
+                user.schedule_timestamp = datetime.utcnow()
+                db.session.commit()
         else:
             logger.warning("No schedule in response data")
             
@@ -148,7 +166,10 @@ def get_schedule():
     try:
         if current_schedule:
             return jsonify({'schedule': current_schedule})
-            
+        user = User.query.filter_by(email=session['user']).first()
+        if user and user.latest_schedule:
+            schedule = json.loads(user.latest_schedule)
+            return jsonify({'schedule': schedule})
         response = requests.get(f'{EEP1_URL}/get-schedule', timeout=30)
         response.raise_for_status()
         return jsonify(response.json())
@@ -245,6 +266,13 @@ def answer_question():
                     logger.warning(f"Failed to store updated schedule in EEP1: {store_response.text}")
             except Exception as e:
                 logger.warning(f"Error storing schedule in EEP1: {str(e)}")
+
+            # Update user's latest_schedule in the database
+            user = User.query.filter_by(email=session['user']).first()
+            if user:
+                user.latest_schedule = json.dumps(response_data['schedule'])
+                user.schedule_timestamp = datetime.utcnow()
+                db.session.commit()
 
         # Pass the ready_for_optimization flag from EEP1 to the frontend
         ready_for_optimization = response_data.get('ready_for_optimization', False)
@@ -451,6 +479,13 @@ def generate_optimized_schedule():
         current_schedule = response_data['schedule']
         logger.info("Updated current schedule with optimized schedule")
         
+        # Update user's record with the new schedule
+        user = User.query.filter_by(email=session['user']).first()
+        if user:
+            user.latest_schedule = json.dumps(response_data['schedule'])
+            user.schedule_timestamp = datetime.utcnow()
+            db.session.commit()
+
         return jsonify(response_data)
         
     except requests.Timeout:
@@ -492,6 +527,8 @@ def login():
             session['user'] = email
             session['first_name'] = user.first_name
             logger.info(f"User logged in successfully: {email}")
+            if user.latest_schedule and user.schedule_timestamp and (datetime.utcnow() - user.schedule_timestamp < timedelta(days=7)):
+                return redirect(url_for('schedule_only'))
             return redirect(url_for('index'))
             
         except Exception as e:
@@ -554,6 +591,30 @@ def register():
 def logout():
     session.pop('user', None)
     return redirect(url_for('login'))
+
+@app.route('/reset-schedule', methods=['POST'])
+@login_required
+def reset_schedule():
+    try:
+        user = User.query.filter_by(email=session['user']).first()
+        if user:
+            user.latest_schedule = None
+            db.session.commit()
+            logger.info(f"Reset schedule for user: {user.email}")
+        global current_schedule
+        current_schedule = None
+
+        # Call EEP1 to reset the stored schedule from storage
+        response = requests.post(f'{EEP1_URL}/reset-stored-schedule', timeout=10)
+        if response.ok:
+            logger.info("Successfully reset stored schedule in EEP1.")
+        else:
+            logger.warning(f"Failed to reset stored schedule in EEP1: {response.text}")
+
+        return jsonify({"status": "reset done"})
+    except Exception as e:
+        logger.error(f"Error in reset schedule: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5002, debug=True) 

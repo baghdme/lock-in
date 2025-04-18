@@ -200,14 +200,15 @@ def update_schedule_with_answers(schedule: dict, answers: list) -> dict:
 # Miscellaneous helper functions
 
 def ensure_ids(schedule):
-    if not schedule:
-        return schedule
-    if 'meetings' in schedule:
-        for meeting in schedule['meetings']:
-            if 'id' not in meeting or not meeting['id']:
-                meeting['id'] = str(uuid.uuid4())
-    if 'tasks' in schedule:
-        for task in schedule['tasks']:
-            if 'id' not in task or not task['id']:
-                task['id'] = str(uuid.uuid4())
+    # Added check to handle case where schedule is a JSON string
+    if isinstance(schedule, str):
+        schedule = json.loads(schedule)
+
+    # Existing logic to ensure every meeting/task has an ID
+    for meeting in schedule.get('meetings', []):
+        if 'id' not in meeting:
+            meeting['id'] = str(uuid.uuid4())
+    for task in schedule.get('tasks', []):
+        if 'id' not in task:
+            task['id'] = str(uuid.uuid4())
     return schedule 

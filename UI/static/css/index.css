@@ -82,10 +82,13 @@ button:hover {
 }
 
 #scheduleOutput {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 1.5rem;
     background-color: #f8f9fa;
     border-radius: 8px;
-    min-height: 200px;
+    min-height: calc(100vh - 300px);
     transition: all 0.3s ease-in-out;
 }
 
@@ -231,4 +234,39 @@ button:hover {
     h1 {
         font-size: 1.8rem;
     }
+}
+
+/* NEW LOADING BOX STYLES */
+.loading-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 600px;
+    height: 200px;
+    background-color: #f9f9f9;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin: 20px auto;
+    padding: 20px;
+}
+.loading-box .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #ddd;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 10px;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.loading-box .loading-text {
+    font-size: 1.2em;
+    color: #333;
+    text-align: center;
 } 
