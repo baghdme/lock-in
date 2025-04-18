@@ -6,6 +6,10 @@ from dotenv import load_dotenv
 import logging
 import json
 
+# ----------------------------------------------
+# Initialization and Setup
+# ----------------------------------------------
+
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -19,6 +23,10 @@ CORS(app)
 # Configure OpenAI API key
 openai.api_key = os.getenv('OPENAI_API_KEY')
 logger.debug("OpenAI API key configured")
+
+# ----------------------------------------------
+# Prediction Endpoint
+# ----------------------------------------------
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -68,6 +76,10 @@ def predict():
         logger.error(f"Error in predict route: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+# ----------------------------------------------
+# Health Check Endpoint
+# ----------------------------------------------
+
 @app.route('/health', methods=['GET'])
 def health_endpoint():
     if not os.getenv('OPENAI_API_KEY'):
@@ -82,6 +94,10 @@ def health_endpoint():
         return jsonify({"status": "healthy", "model": "gpt-3.5-turbo-1106", "openai_status": "connected"}), 200
     except Exception as e:
         return jsonify({"status": "unhealthy", "error": f"OpenAI connection error: {str(e)}", "openai_status": "disconnected"}), 500
+
+# ----------------------------------------------
+# Main Execution
+# ----------------------------------------------
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)

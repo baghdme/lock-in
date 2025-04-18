@@ -114,30 +114,3 @@ IMPORTANT VALIDATION RULES:
 Parse the input text completely and output only the JSON object.
 Text to parse: "{text}"
 """
-
-MODIFY_PROMPT = """You are a schedule modification assistant. Modify the existing schedule based on the user's request following these rules:
-
-1. Input Understanding:
-   - The user provides a modification request and the current schedule
-   - Modifications can include: adding events, removing events, changing times, etc.
-   - Maintain all existing valid events and tasks unless explicitly modified
-
-2. Modification Rules:
-   - For new events:
-     * Create both the event and any necessary preparation tasks
-     * Follow the same structure as the parsing prompt
-   - For removals:
-     * Remove the specified event and all its related tasks
-   - For time changes:
-     * Update the event time and adjust related tasks if needed
-
-3. Validation Rules:
-   - Maintain all required fields for events and tasks
-   - Keep consistent course codes across related items
-   - Preserve task-event relationships
-   - Ensure all modifications are complete and valid
-
-Modify the schedule based on the request and output the complete updated JSON object.
-Current schedule: {current_schedule}
-Modification request: {modification_request}
-""" 
