@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Upload - Document Parser</title>
+    <title>IEP Document System</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -17,10 +17,11 @@
             padding: 30px;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
         }
-        h1 {
+        h1, h2 {
             color: #333;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
         .form-group {
             margin-bottom: 20px;
@@ -29,6 +30,13 @@
             display: block;
             margin-bottom: 8px;
             font-weight: bold;
+        }
+        .input-field {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
         }
         .file-input {
             width: 100%;
@@ -44,6 +52,7 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 16px;
+            margin-right: 10px;
         }
         button:hover {
             background-color: #45a049;
@@ -55,19 +64,83 @@
             background-color: #fadbd8;
             border-radius: 4px;
         }
+        .success {
+            color: #2ecc71;
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #d4efdf;
+            border-radius: 4px;
+        }
         .info {
             margin-top: 20px;
             color: #3498db;
         }
+        .hidden {
+            display: none;
+        }
+        .user-info {
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
+    {% if not current_user %}
+    <div class="container" id="userForms">
+        <h2>Create Account or Login</h2>
+        
+        <div class="form-group">
+            <button onclick="toggleForm('loginForm')">Login</button>
+            <button onclick="toggleForm('registerForm')">Create Account</button>
+        </div>
+
+        <form id="loginForm" action="/login" method="post" class="hidden">
+            <div class="form-group">
+                <label for="login-username">Username:</label>
+                <input type="text" id="login-username" name="username" class="input-field" required>
+                
+                <label for="login-password">Password:</label>
+                <input type="password" id="login-password" name="password" class="input-field" required>
+                
+                <button type="submit">Login</button>
+            </div>
+        </form>
+
+        <form id="registerForm" action="/register" method="post" class="hidden">
+            <div class="form-group">
+                <label for="register-username">Username:</label>
+                <input type="text" id="register-username" name="username" class="input-field" required>
+                
+                <label for="register-email">Email:</label>
+                <input type="email" id="register-email" name="email" class="input-field" required>
+                
+                <label for="register-password">Password:</label>
+                <input type="password" id="register-password" name="password" class="input-field" required>
+                
+                <button type="submit">Create Account</button>
+            </div>
+        </form>
+    </div>
+    {% else %}
     <div class="container">
-        <h1>Document Parser</h1>
+        <div class="user-info">
+            <strong>Welcome, {{ current_user.username }}!</strong>
+            <a href="/logout" style="float: right;">Logout</a>
+        </div>
+        
+        <h2>Document Parser</h2>
         
         {% if error %}
         <div class="error">
             <strong>Error:</strong> {{ error }}
+        </div>
+        {% endif %}
+
+        {% if success %}
+        <div class="success">
+            {{ success }}
         </div>
         {% endif %}
         
@@ -81,5 +154,14 @@
             <button type="submit">Upload & Parse</button>
         </form>
     </div>
+    {% endif %}
+
+    <script>
+        function toggleForm(formId) {
+            document.getElementById('loginForm').classList.add('hidden');
+            document.getElementById('registerForm').classList.add('hidden');
+            document.getElementById(formId).classList.remove('hidden');
+        }
+    </script>
 </body>
 </html> 

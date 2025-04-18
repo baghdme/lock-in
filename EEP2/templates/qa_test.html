@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IEP Question Answering Interface</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .container {
+            max-width: 1000px;
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .result-box {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            min-height: 100px;
+        }
+        .history-item {
+            border-bottom: 1px solid #dee2e6;
+            padding: 10px 0;
+        }
+        .history-item:last-child {
+            border-bottom: none;
+        }
+        .cached-badge {
+            background-color: #28a745;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            margin-left: 10px;
+        }
+        .schedule-badge {
+            background-color: #007bff;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            margin-left: 10px;
+        }
+        .user-info {
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .schedule-mod-box {
+            background-color: #e7f3ff;
+            border: 1px solid #b8daff;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            display: none;
+        }
+        .schedule-action {
+            font-weight: bold;
+            text-transform: capitalize;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="user-info">
+            {% if current_user %}
+            <strong>Welcome, {{ current_user.username }}!</strong>
+            {% else %}
+            <strong>Welcome, Guest!</strong>
+            {% endif %}
+            <a href="/" class="btn btn-outline-primary btn-sm float-end">Back to Upload</a>
+        </div>
+
+        <h1 class="mb-4">IEP Question Answering Interface</h1>
+        
+        <!-- Document Selection -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Document Selection</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="documentSelect" class="form-label">Select Document</label>
+                    <select class="form-select" id="documentSelect">
+                        <option value="">-- Select a document --</option>
+                        {% for doc in documents %}
+                        <option value="{{ doc.id }}" {% if doc.id == selected_document_id %}selected{% endif %}>
+                            {{ doc.title }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Question Form -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Ask a Question</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="questionInput" class="form-label">Your Question</label>
+                    <textarea class="form-control" id="questionInput" rows="3" placeholder="Enter your question about the document..."></textarea>
+                </div>
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                    <button class="btn btn-primary" id="askQuestionBtn">Ask Question</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Results -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Answer</h5>
+            </div>
+            <div class="card-body">
+                <div id="answerResult" class="result-box">
+                    <p class="text-muted">Ask a question to see the answer here.</p>
+                </div>
+                
+                <!-- Schedule Modification Box -->
+                <div id="scheduleModBox" class="schedule-mod-box">
+                    <h6 class="mb-3">Schedule Modification Suggested</h6>
+                    <p>The system has detected a request to modify your schedule:</p>
+                    <p><span class="schedule-action" id="scheduleAction">create</span>: <span id="scheduleDetails"></span></p>
+                    <div class="d-flex gap-2 mt-3">
+                        <button class="btn btn-success btn-sm" id="acceptScheduleBtn">Accept</button>
+                        <button class="btn btn-outline-secondary btn-sm" id="rejectScheduleBtn">Ignore</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- QA History -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Question-Answer History</h5>
+            </div>
+            <div class="card-body">
+                <div id="qaHistory">
+                    <p class="text-muted">No history available yet.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const documentSelect = document.getElementById('documentSelect');
+        const questionInput = document.getElementById('questionInput');
+        const askQuestionBtn = document.getElementById('askQuestionBtn');
+        const answerResult = document.getElementById('answerResult');
+        const qaHistory = document.getElementById('qaHistory');
+        const scheduleModBox = document.getElementById('scheduleModBox');
+        const scheduleAction = document.getElementById('scheduleAction');
+        const scheduleDetails = document.getElementById('scheduleDetails');
+        const acceptScheduleBtn = document.getElementById('acceptScheduleBtn');
+        const rejectScheduleBtn = document.getElementById('rejectScheduleBtn');
+        
+        // Current schedule modification data
+        let currentScheduleModification = null;
+
+        // Set up console logging
+        console.log("QA Test page loaded");
+        console.log("Selected document ID:", documentSelect.value);
+        
+        // Load QA history when document changes
+        documentSelect.addEventListener('change', async () => {
+            const documentId = documentSelect.value;
+            console.log("Document changed to:", documentId);
+            if (documentId) {
+                await loadQAHistory(documentId);
+            } else {
+                qaHistory.innerHTML = '<p class="text-muted">No history available yet.</p>';
+            }
+        });
+        
+        // Load QA history
+        async function loadQAHistory(documentId) {
+            console.log("Loading QA history for document:", documentId);
+            try {
+                // User ID to use in API call
+                const userId = "{{ current_user.id if current_user else 'guest' }}";
+                console.log("Using user ID:", userId);
+                
+                const historyResponse = await fetch(`/api/qa/history?user_id=${userId}&document_id=${documentId}`);
+                
+                if (!historyResponse.ok) {
+                    const errorText = await historyResponse.text();
+                    console.error("History API error:", historyResponse.status, errorText);
+                    qaHistory.innerHTML = `<p class="text-danger">Failed to load QA history. Status: ${historyResponse.status}</p>`;
+                    return;
+                }
+                
+                const history = await historyResponse.json();
+                console.log("Received history data:", history);
+                
+                if (history.length === 0) {
+                    qaHistory.innerHTML = '<p class="text-muted">No history available yet.</p>';
+                    return;
+                }
+                
+                // Display QA history
+                qaHistory.innerHTML = '';
+                history.forEach(item => {
+                    const historyItem = document.createElement('div');
+                    historyItem.className = 'history-item';
+                    
+                    const question = document.createElement('p');
+                    question.className = 'fw-bold mb-1';
+                    question.textContent = item.question;
+                    
+                    const answer = document.createElement('p');
+                    answer.className = 'mb-1';
+                    answer.textContent = item.answer;
+                    
+                    const metadata = document.createElement('small');
+                    metadata.className = 'text-muted';
+                    metadata.textContent = `Asked on ${new Date(item.created_at).toLocaleString()}`;
+                    
+                    historyItem.appendChild(question);
+                    historyItem.appendChild(answer);
+                    historyItem.appendChild(metadata);
+                    
+                    qaHistory.appendChild(historyItem);
+                });
+            } catch (error) {
+                console.error('Error loading QA history:', error);
+                qaHistory.innerHTML = '<p class="text-danger">Failed to load QA history: ' + error.message + '</p>';
+            }
+        }
+        
+        // Ask a question
+        askQuestionBtn.addEventListener('click', async () => {
+            const documentId = documentSelect.value;
+            const question = questionInput.value.trim();
+            
+            console.log("Ask question clicked. Document ID:", documentId, "Question:", question);
+            
+            if (!documentId) {
+                alert('Please select a document.');
+                return;
+            }
+            
+            if (!question) {
+                alert('Please enter a question.');
+                return;
+            }
+            
+            try {
+                // Show loading state
+                answerResult.innerHTML = '<p class="text-muted">Thinking...</p>';
+                askQuestionBtn.disabled = true;
+                
+                // Hide schedule modification box
+                scheduleModBox.style.display = 'none';
+                currentScheduleModification = null;
+                
+                // Send question to QA service
+                console.log("Sending request to /api/qa");
+                const userId = "{{ current_user.id if current_user else 'guest' }}";
+                const requestData = {
+                    document_id: documentId,
+                    question: question,
+                    user_id: userId
+                };
+                console.log("Request data:", requestData);
+                
+                const response = await fetch('/api/qa', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                console.log("Received response. Status:", response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error("API error:", response.status, errorText);
+                    answerResult.innerHTML = `<p class="text-danger">Error: ${response.status} - ${errorText}</p>`;
+                    askQuestionBtn.disabled = false;
+                    return;
+                }
+                
+                const result = await response.json();
+                console.log("Response data:", result);
+                
+                if (response.ok) {
+                    // Check if this is a schedule modification or a regular answer
+                    if (result.type === 'schedule_mod') {
+                        // Show the answer
+                        answerResult.innerHTML = `<p>${result.answer}</p><span class="schedule-badge">Schedule Request</span>`;
+                        
+                        // Show the schedule modification box
+                        scheduleAction.textContent = result.payload.action || 'modify';
+                        scheduleDetails.textContent = result.payload.text || '';
+                        scheduleModBox.style.display = 'block';
+                        
+                        // Store the modification data
+                        currentScheduleModification = result.payload;
+                    } else {
+                        // Regular answer
+                        let answerHtml = `<p>${result.answer}</p>`;
+                        if (result.cached) {
+                            answerHtml += '<span class="cached-badge">Cached</span>';
+                        }
+                        answerResult.innerHTML = answerHtml;
+                    }
+                    
+                    // Reload QA history
+                    await loadQAHistory(documentId);
+                    
+                    // Clear question input
+                    questionInput.value = '';
+                } else {
+                    answerResult.innerHTML = `<p class="text-danger">Error: ${result.error || 'Unknown error'}</p>`;
+                }
+            } catch (error) {
+                console.error('Error asking question:', error);
+                answerResult.innerHTML = '<p class="text-danger">Failed to get an answer: ' + error.message + '</p>';
+            } finally {
+                askQuestionBtn.disabled = false;
+            }
+        });
+
+        // Handle schedule modification acceptance
+        acceptScheduleBtn.addEventListener('click', async () => {
+            if (!currentScheduleModification) return;
+            
+            try {
+                acceptScheduleBtn.disabled = true;
+                rejectScheduleBtn.disabled = true;
+                
+                // Send the schedule modification to the server
+                const response = await fetch('/api/modify-schedule', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(currentScheduleModification)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    // Show success message
+                    scheduleModBox.innerHTML = `
+                        <div class="alert alert-success mb-0">
+                            <strong>Success!</strong> Your schedule has been updated.
+                        </div>
+                    `;
+                } else {
+                    // Show error message
+                    scheduleModBox.innerHTML = `
+                        <div class="alert alert-danger mb-0">
+                            <strong>Error!</strong> ${result.error || 'Failed to update schedule.'}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error updating schedule:', error);
+                scheduleModBox.innerHTML = `
+                    <div class="alert alert-danger mb-0">
+                        <strong>Error!</strong> Failed to update schedule. Please try again.
+                    </div>
+                `;
+            } finally {
+                setTimeout(() => {
+                    scheduleModBox.style.display = 'none';
+                    currentScheduleModification = null;
+                }, 5000);
+            }
+        });
+        
+        // Handle schedule modification rejection
+        rejectScheduleBtn.addEventListener('click', () => {
+            scheduleModBox.style.display = 'none';
+            currentScheduleModification = null;
+        });
+
+        // Load initial QA history if document is selected
+        if (documentSelect.value) {
+            console.log("Initial document selected:", documentSelect.value);
+            loadQAHistory(documentSelect.value);
+        }
+
+        // Add an event listener for the initial load
+        window.addEventListener('load', () => {
+            console.log("Window loaded. Selected document:", documentSelect.value);
+            console.log("Current user ID:", "{{ current_user.id }}");
+        });
+    </script>
+</body>
+</html> 

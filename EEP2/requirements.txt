@@ -1,5 +1,29 @@
+# ─── Core web stack ─────────────────────────────────────────────
 Flask==2.3.3
 Werkzeug==2.3.7
-requests==2.31.0
-python-dotenv==1.0.0
-Flask-Cors==4.0.0 
+Flask-Cors==4.0.0
+requests>=2.31.0,<3.0.0
+python-dotenv==1.0.1
+gunicorn==20.1.0
+
+# ─── Database / ORM ─────────────────────────────────────────────
+SQLAlchemy==2.0.23
+Flask-SQLAlchemy==3.1.1
+alembic==1.12.1
+# (optional) redis==4.5.4          # only if you really use Redis
+
+# ─── ML & vector tools ──────────────────────────────────────────
+numpy>=1.24.0
+faiss-cpu==1.7.4                  # latest wheel for Win/Linux
+sentence-transformers==2.2.2
+openai>=1.6.1
+langchain>=0.0.267
+langchain-openai>=0.0.2
+
+# Weaviate SDK with embedded server support
+weaviate-client[embedded]==4.5.4  # ← single source of truth
+
+# ─── Dev / test tools ───────────────────────────────────────────
+pytest==7.4.4
+black==23.12.1
+flake8==6.1.0

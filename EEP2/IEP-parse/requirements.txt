@@ -1,11 +1,13 @@
-Flask==2.3.3
-pdfminer.six==20221105
+Flask==2.2.5
+requests>=2.30.0,<3.0.0
+python-dotenv==0.19.0
+SQLAlchemy==2.0.23
+# psycopg2-binary==2.9.9  # Removed - using SQLite instead of PostgreSQL
+Pillow==10.1.0
+pytesseract==0.3.10
+pdf2image==1.16.3
 python-docx==0.8.11
+pdfminer.six==20221105
 python-pptx==0.6.21
 gunicorn==20.1.0
-PyMuPDF==1.23.3
-pytesseract==0.3.10
-Pillow==9.5.0
-opencv-python==4.8.0.76
-numpy==1.24.3
-watchdog==2.3.1
+Flask-SQLAlchemy==3.1.1
