@@ -11,6 +11,7 @@ from prompts import PARSING_PROMPT
 from preference_questions import get_preference_questions, get_algorithm_questions, get_default_preferences
 from helpers import save_schedule, load_schedule, convert_to_24h, validate_and_fix_times, check_missing_info, clean_missing_info_from_tasks, clean_schedule, convert_answer_value, update_schedule_with_answers, ensure_ids, STORAGE_PATH, FINAL_PATH
 import uuid
+from schedule_prompts import get_schedule_prompt, get_response_parsing_prompt
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -254,8 +255,194 @@ def get_preference_questions_endpoint():
         logger.error(f"Error getting preference questions: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/construct-schedule-prompt', methods=['POST'])
+def construct_schedule_prompt():
+    """
+    Construct a prompt for the LLM based on schedule data and preferences.
+    This is called by IEP2 before it makes the LLM API call.
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        # Extract schedule data
+        if 'schedule' in data:
+            schedule_data = data['schedule']
+        else:
+            # If not wrapped in 'schedule', create a structure
+            schedule_data = {
+                'meetings': data.get('meetings', []),
+                'tasks': data.get('tasks', []),
+                'course_codes': data.get('course_codes', [])
+            }
+            
+        # Check if we have both meetings and tasks
+        if 'meetings' not in schedule_data or 'tasks' not in schedule_data:
+            return jsonify({
+                'error': 'Invalid schedule format',
+                'message': 'Schedule must contain "meetings" and "tasks" arrays'
+            }), 400
+            
+        # Get preferences
+        preferences = data.get('preferences', get_default_preferences())
+        
+        # Apply any business logic needed before creating the prompt
+        # For example, ensure all tasks and meetings have IDs
+        for collection in ['meetings', 'tasks']:
+            for item in schedule_data.get(collection, []):
+                if 'id' not in item or not item['id']:
+                    item['id'] = str(uuid.uuid4())
+                    
+        # Pre-process task durations
+        for task in schedule_data.get('tasks', []):
+            if task.get('duration_minutes') in [None, '', 'null']:
+                priority = task.get('priority', 'medium').lower()
+                task['duration_minutes'] = 240 if priority in ['high', '1', 'urgent'] else 180
+                
+        # Ensure all meetings have required fields
+        for meeting in schedule_data.get('meetings', []):
+            if not meeting.get('duration') and meeting.get('duration_minutes'):
+                meeting['duration'] = meeting['duration_minutes']
+                
+        # Build the prompt using the helper function
+        prompt = get_schedule_prompt(schedule_data, preferences)
+        
+        logger.info(f"Generated prompt with length: {len(prompt)}")
+        
+        return jsonify({
+            'prompt': prompt,
+            'schedule_data': schedule_data,
+            'preferences': preferences
+        })
+        
+    except Exception as e:
+        logger.error(f"Error constructing prompt: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+        
+@app.route('/parse-schedule-llm-response', methods=['POST'])
+def parse_schedule_llm_response():
+    """
+    Parse and validate the LLM's response, ensuring it follows the correct format.
+    This is called by IEP2 after it receives the LLM response.
+    """
+    try:
+        data = request.get_json()
+        if not data or 'original_data' not in data:
+            return jsonify({'error': 'Missing required data'}), 400
+            
+        original_data = data['original_data']
+        
+        # Handle different response formats based on what's provided
+        if 'llm_response' in data:
+            # Direct text response (old format)
+            llm_response = data['llm_response']
+        else:
+            # Raw Anthropic API response (new format)
+            anthropic_response = data.get('response', {})
+            # Extract text from content array in Anthropic response
+            content_list = anthropic_response.get('content', [])
+            if content_list and isinstance(content_list, list) and len(content_list) > 0:
+                llm_response = content_list[0].get('text', '')
+            else:
+                return jsonify({'error': 'Could not extract text from Anthropic response'}), 400
+        
+        # Extract generated calendar from LLM response
+        generated_calendar = None
+        
+        # First attempt: try to parse the response directly as JSON
+        try:
+            # Try to find a JSON object in the response
+            json_start = llm_response.find('{')
+            json_end = llm_response.rfind('}') + 1
+            
+            if json_start >= 0 and json_end > json_start:
+                json_str = llm_response[json_start:json_end]
+                parsed_response = json.loads(json_str)
+                
+                # Check if it's a complete calendar object or just the generated_calendar
+                if "generated_calendar" in parsed_response:
+                    generated_calendar = parsed_response["generated_calendar"]
+                else:
+                    # Assume the entire object is the calendar
+                    generated_calendar = parsed_response
+            else:
+                logger.warning("Could not find JSON in LLM response")
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse LLM response as JSON: {e}")
+            
+        # If we couldn't parse it, we need further processing
+        if not generated_calendar:
+            # Call IEP1 to help parse the response
+            try:
+                parsing_prompt = get_response_parsing_prompt(llm_response, original_data)
+                
+                parsing_response = requests.post(
+                    f"{IEP1_URL}/predict",
+                    json={'prompt': parsing_prompt},
+                    timeout=30
+                )
+                
+                if parsing_response.status_code != 200:
+                    return jsonify({'error': f'Failed to parse LLM response: {parsing_response.text}'}), 500
+                    
+                parsed_result = parsing_response.json()
+                
+                # Try to extract the JSON part from the parsing result
+                if isinstance(parsed_result, str):
+                    json_start = parsed_result.find('{')
+                    json_end = parsed_result.rfind('}') + 1
+                    
+                    if json_start >= 0 and json_end > json_start:
+                        json_str = parsed_result[json_start:json_end]
+                        parsed_json = json.loads(json_str)
+                        
+                        if "schedule" in parsed_json and "generated_calendar" in parsed_json["schedule"]:
+                            generated_calendar = parsed_json["schedule"]["generated_calendar"]
+                else:
+                    # If it's already a dict
+                    if "schedule" in parsed_result and "generated_calendar" in parsed_result["schedule"]:
+                        generated_calendar = parsed_result["schedule"]["generated_calendar"]
+                
+            except Exception as e:
+                logger.error(f"Error parsing LLM response with IEP1: {str(e)}", exc_info=True)
+                
+        # If we still don't have a calendar, return an error
+        if not generated_calendar:
+            return jsonify({'error': 'Could not extract valid schedule from LLM response'}), 500
+            
+        # Now construct the final response
+        if 'schedule' in original_data:
+            schedule_out = original_data['schedule']
+        else:
+            schedule_out = {
+                'meetings': original_data.get('meetings', []),
+                'tasks': original_data.get('tasks', []),
+                'course_codes': original_data.get('course_codes', [])
+            }
+            
+        # Add the generated calendar
+        schedule_out['generated_calendar'] = generated_calendar
+        
+        # Construct the complete response
+        result = {
+            'success': True,
+            'schedule': schedule_out,
+            'message': 'Schedule successfully generated using LLM'
+        }
+        
+        # Save the final schedule
+        save_schedule(schedule_out, FINAL_PATH)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error parsing LLM response: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/generate-optimized-schedule', methods=['POST'])
 def generate_optimized_schedule():
+    """Generate an optimized schedule using EEP1 service, which will call IEP2."""
     try:
         data = request.get_json()
         if not data or 'schedule' not in data:
@@ -279,40 +466,167 @@ def generate_optimized_schedule():
             logger.info("Using default preferences for schedule generation")
         
         cleaned_schedule = clean_schedule(schedule)
-        logger.info(f"Cleaned schedule: {json.dumps(cleaned_schedule, indent=2)}")
+        logger.info("Preparing to generate schedule...")
         
-        iep2_data = {
-            'schedule': cleaned_schedule,
-            'preferences': preferences
-        }
-
-        logger.info("Calling IEP2 to generate optimized schedule")
-        response = requests.post(
-            f"{IEP2_URL}/api/generate",
-            json=iep2_data,
-            timeout=30
-        )
-        if response.status_code != 200:
-            error_text = response.text
-            logger.error(f"Error from IEP2: {error_text}")
-            try:
-                error_json = response.json()
-                logger.error(f"Detailed IEP2 error: {json.dumps(error_json, indent=2)}")
-            except Exception as e:
-                logger.error(f"Could not parse IEP2 error response as JSON: {e}")
-            return jsonify({'error': f'IEP2 error: {error_text}'}), response.status_code
+        # Step 1: Generate the prompt directly (don't call our own API)
+        try:
+            # Prepare schedule data and ensure IDs
+            for collection in ['meetings', 'tasks']:
+                for item in cleaned_schedule.get(collection, []):
+                    if 'id' not in item or not item['id']:
+                        item['id'] = str(uuid.uuid4())
+                        
+            # Pre-process task durations
+            for task in cleaned_schedule.get('tasks', []):
+                if task.get('duration_minutes') in [None, '', 'null']:
+                    priority = task.get('priority', 'medium').lower()
+                    task['duration_minutes'] = 240 if priority in ['high', '1', 'urgent'] else 180
+                    
+            # Ensure all meetings have required fields
+            for meeting in cleaned_schedule.get('meetings', []):
+                if not meeting.get('duration') and meeting.get('duration_minutes'):
+                    meeting['duration'] = meeting['duration_minutes']
+                    
+            # Generate the prompt directly
+            prompt = get_schedule_prompt(cleaned_schedule, preferences)
+            logger.info(f"Generated prompt with length: {len(prompt)}")
             
-        optimized_schedule = response.json()
-        save_schedule(optimized_schedule, FINAL_PATH)
-        return jsonify({
-            'status': 'success',
-            'schedule': optimized_schedule
-        })
+        except Exception as e:
+            logger.error(f"Error generating prompt: {str(e)}")
+            return jsonify({'error': f'Failed to generate prompt: {str(e)}'}), 500
+        
+        if not prompt:
+            return jsonify({'error': 'Failed to generate prompt - empty result'}), 500
+        
+        # Step 2: Call IEP2 with the prompt
+        logger.info(f"Calling IEP2 with prompt length: {len(prompt)}")
+        try:
+            iep2_response = requests.post(
+                f"{IEP2_URL}/api/generate",
+                json={
+                    'prompt': prompt,
+                    'max_tokens': 4000,
+                    'temperature': 0.2
+                },
+                timeout=60  # Longer timeout for Anthropic API
+            )
+            
+            if iep2_response.status_code != 200:
+                logger.error(f"IEP2 error: {iep2_response.text}")
+                return jsonify({'error': f'IEP2 error: {iep2_response.text}'}), iep2_response.status_code
+                
+            # Get the raw Anthropic API response
+            anthropic_response = iep2_response.json()
+            logger.info("Received response from IEP2, extracting text from response")
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error calling IEP2: {str(e)}")
+            return jsonify({'error': f'Error calling IEP2: {str(e)}'}), 500
+        
+        # Step 3: Extract the text from the Anthropic response
+        content_list = anthropic_response.get('content', [])
+        if not content_list or not isinstance(content_list, list) or len(content_list) == 0:
+            logger.error(f"Invalid response format from IEP2: {anthropic_response}")
+            return jsonify({'error': 'Invalid response format from IEP2'}), 500
+            
+        llm_response = content_list[0].get('text', '')
+        if not llm_response:
+            logger.error("Empty text content in Anthropic response")
+            return jsonify({'error': 'Empty response from Anthropic API'}), 500
+            
+        logger.info(f"Extracted text from Anthropic response (length: {len(llm_response)})")
+        
+        # Step 4: Parse the LLM response text
+        try:
+            # Extract generated calendar from LLM response
+            generated_calendar = None
+            
+            # First attempt: try to parse the response directly as JSON
+            try:
+                # Try to find a JSON object in the response
+                json_start = llm_response.find('{')
+                json_end = llm_response.rfind('}') + 1
+                
+                if json_start >= 0 and json_end > json_start:
+                    json_str = llm_response[json_start:json_end]
+                    parsed_response = json.loads(json_str)
+                    
+                    # Check if it's a complete calendar object or just the generated_calendar
+                    if "generated_calendar" in parsed_response:
+                        generated_calendar = parsed_response["generated_calendar"]
+                    else:
+                        # Assume the entire object is the calendar
+                        generated_calendar = parsed_response
+                else:
+                    logger.warning("Could not find JSON in LLM response")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse LLM response as JSON: {e}")
+                
+            # If we couldn't parse it, we need further processing
+            if not generated_calendar:
+                # Call IEP1 to help parse the response
+                parsing_prompt = get_response_parsing_prompt(llm_response, {'schedule': cleaned_schedule, 'preferences': preferences})
+                
+                parsing_response = requests.post(
+                    f"{IEP1_URL}/predict",
+                    json={'prompt': parsing_prompt},
+                    timeout=30
+                )
+                
+                if parsing_response.status_code != 200:
+                    return jsonify({'error': f'Failed to parse LLM response: {parsing_response.text}'}), 500
+                    
+                parsed_result = parsing_response.json()
+                
+                # Try to extract the JSON part from the parsing result
+                if isinstance(parsed_result, str):
+                    json_start = parsed_result.find('{')
+                    json_end = parsed_result.rfind('}') + 1
+                    
+                    if json_start >= 0 and json_end > json_start:
+                        json_str = parsed_result[json_start:json_end]
+                        parsed_json = json.loads(json_str)
+                        
+                        if "schedule" in parsed_json and "generated_calendar" in parsed_json["schedule"]:
+                            generated_calendar = parsed_json["schedule"]["generated_calendar"]
+                else:
+                    # If it's already a dict
+                    if "schedule" in parsed_result and "generated_calendar" in parsed_result["schedule"]:
+                        generated_calendar = parsed_result["schedule"]["generated_calendar"]
+            
+            # If we still don't have a calendar, return an error
+            if not generated_calendar:
+                return jsonify({'error': 'Could not extract valid schedule from LLM response'}), 500
+                
+            # Now construct the final schedule
+            schedule_out = {
+                'meetings': cleaned_schedule.get('meetings', []),
+                'tasks': cleaned_schedule.get('tasks', []),
+                'course_codes': cleaned_schedule.get('course_codes', []),
+                'generated_calendar': generated_calendar
+            }
+            
+            # Construct the complete response
+            result = {
+                'success': True,
+                'schedule': schedule_out,
+                'message': 'Schedule successfully generated using LLM'
+            }
+            
+            # Save the final schedule
+            save_schedule(schedule_out, FINAL_PATH)
+            logger.info("Successfully generated and saved schedule")
+            
+            return jsonify(result)
+            
+        except Exception as e:
+            logger.error(f"Error parsing LLM response: {str(e)}", exc_info=True)
+            return jsonify({'error': f'Error parsing LLM response: {str(e)}'}), 500
             
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error communicating with IEP2: {str(e)}")
+        logger.error(f"Error communicating with services: {str(e)}")
         return jsonify({
-            'error': f'Error communicating with IEP2: {str(e)}'
+            'error': f'Error communicating with services: {str(e)}'
         }), 500
     except Exception as e:
         logger.error(f"Error generating optimized schedule: {str(e)}", exc_info=True)
