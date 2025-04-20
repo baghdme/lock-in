@@ -13,7 +13,7 @@ PARSING_PROMPT = """You are an expert schedule parsing AI with advanced natural 
    - When duration is specified ("2-hour yoga", "30-minute meeting"), extract it correctly without asking later
    - Avoid inferring properties unless clearly implied - don't guess missing information
    - Carefully separate qualifiers that belong to different events even in complex sentences
-   - DAY INHERITANCE: When phrases like "another one", "the next one", "a second exam" are used without specifying a new day, ALWAYS inherit the previously mentioned day
+   - DAY INHERITANCE: When phrases like "another one", "the next one", "a second exam", "then", or "followed by" are used without specifying a new day, ALWAYS inherit the previously mentioned day
 
 3. Event Classification:
    - Fixed Events (treated as meetings):
@@ -38,6 +38,12 @@ PARSING_PROMPT = """You are an expert schedule parsing AI with advanced natural 
    - When multiple events are mentioned in sequence, maintain logical time ordering
    - Parse dates correctly throughout the week, handling expressions like "next day", "following morning"
    - SEQUENTIAL EVENT CONTEXT: For expressions like "I have [event1] on [day] at [time1] and [event2] at [time2]", both events MUST be assigned to the same day
+
+7. Multiple Event Processing:
+   - CRITICAL: When multiple events appear in the same sentence or paragraph, create distinct entries for each event
+   - When multiple events share a day reference (e.g., "On Monday, I have X, Y, and Z"), apply the day to ALL events
+   - When connectors like "and", "also", "then", "after that" link events, maintain context across ALL events
+   - For lists of events (e.g., "I have exams for EECE503, CMPS303, and MATH201 on Thursday"), create separate entries for each event while preserving the shared day and any other shared attributes
 
 Output a JSON object with this structure:
 {
@@ -97,11 +103,19 @@ IMPORTANT VALIDATION RULES:
    - If something is ambiguous, choose the most reasonable interpretation based on context
    - MULTIPLE EVENTS, SAME DAY: When multiple events are mentioned with only one day specified, assume all events occur on that day unless explicitly stated otherwise
 
-5. FINAL CHECK:
+5. MULTIPLE EVENT PATTERNS:
+   - For sequences like "I have X on Monday at 10AM, Y at 2PM, and Z at 4PM", create three separate events ALL on Monday
+   - For enumerations like "I have classes for EECE400, CMPS303, and PHYS201", create three separate meeting entries
+   - When events use shared attributes (time, day, type), apply those attributes to ALL relevant events
+   - Apply context across sentence boundaries when appropriate (e.g., "I have an exam on Monday. It's for EECE503")
+
+6. FINAL CHECK:
    - Before returning your response, verify that:
      * You've only included items explicitly mentioned in the text
      * Course codes are correctly assigned when provided
-     * Multiple events mentioned together (like "exam at 1PM and another at 5PM") are assigned to the same day unless a different day is specifically mentioned
+     * Multiple events mentioned together are correctly separated into individual entries
+     * Each event maintains proper context from surrounding text
+     * Days are properly inherited across related events mentioned in sequence
 
 Parse the input text completely and output only the JSON object.
 Text to parse: "{text}"

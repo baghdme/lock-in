@@ -40,8 +40,6 @@ function signUp() {
 let currentQuestions = [];
 let currentQuestionIndex = 0;
 let currentSchedule = null;
-let userPreferences = {};
-let preferencesSubmitted = false;
 let allMissingInfoResolved = false;
 
 function showQuestionDialog(questions) {
@@ -65,6 +63,11 @@ function showQuestionDialog(questions) {
     dialog.dataset.questionField = question.field;
     dialog.dataset.questionTargetType = question.target_type;
     
+    // For AM/PM questions, store the original time value
+    if (question.type === 'ampm' && question.original_time) {
+        dialog.dataset.originalTime = question.original_time;
+    }
+    
     // Set the question text
     document.getElementById('questionText').textContent = question.question;
     
@@ -72,7 +75,32 @@ function showQuestionDialog(questions) {
     const inputContainer = document.getElementById('questionInput');
     inputContainer.innerHTML = '';
     
-    if (question.type === 'time') {
+    // Check if the question specifies input_type as dropdown
+    if (question.input_type === 'dropdown' && question.options && question.options.length > 0) {
+        // Create a dropdown/select element
+        const selectElement = document.createElement('select');
+        selectElement.id = 'dropdownInput';
+        selectElement.className = 'form-control';
+        selectElement.required = true;
+        
+        // Add empty default option
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = 'Please select an option';
+        defaultOption.disabled = true;
+        defaultOption.selected = true;
+        selectElement.appendChild(defaultOption);
+        
+        // Add options from the question
+        question.options.forEach(option => {
+            const optionElement = document.createElement('option');
+            optionElement.value = option.value;
+            optionElement.textContent = option.text;
+            selectElement.appendChild(optionElement);
+        });
+        
+        inputContainer.appendChild(selectElement);
+    } else if (question.type === 'time') {
         // Create time input
         const timeInput = document.createElement('input');
         timeInput.type = 'time';
@@ -113,15 +141,22 @@ function showQuestionDialog(questions) {
 
 function submitAnswer() {
     // Get the current question information from the dialog
-    const questionId = document.querySelector('#questionDialog').dataset.questionId;
-    const questionType = document.querySelector('#questionDialog').dataset.questionType;
-    const questionTarget = document.querySelector('#questionDialog').dataset.questionTarget;
-    const questionField = document.querySelector('#questionDialog').dataset.questionField;
-    const questionTargetType = document.querySelector('#questionDialog').dataset.questionTargetType;
+    const dialog = document.querySelector('#questionDialog');
+    const questionId = dialog.dataset.questionId;
+    const questionType = dialog.dataset.questionType;
+    const questionTarget = dialog.dataset.questionTarget;
+    const questionField = dialog.dataset.questionField;
+    const questionTargetType = dialog.dataset.questionTargetType;
+    const originalTime = dialog.dataset.originalTime; // For AM/PM questions
 
     // Get the answer from the appropriate input field
     let answer;
-    if (questionType === 'time') {
+    
+    // Check if we're dealing with a dropdown input
+    const dropdownInput = document.getElementById('dropdownInput');
+    if (dropdownInput) {
+        answer = dropdownInput.value;
+    } else if (questionType === 'time') {
         const timeInput = document.getElementById('timeInput');
         answer = timeInput ? timeInput.value : '';
     } else if (questionType === 'duration') {
@@ -150,20 +185,28 @@ function submitAnswer() {
         }
     }
 
+    // Prepare the request body
+    const requestBody = {
+        item_id: questionId,
+        type: questionType,
+        answer: answer,
+        field: questionField,
+        target: questionTarget,
+        target_type: questionTargetType,
+        schedule: currentSchedule
+    };
+
+    // Add original_time for AM/PM questions
+    if (questionType === 'ampm' && originalTime) {
+        requestBody.original_time = originalTime;
+    }
+
     fetch('http://localhost:5002/answer-question', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-            item_id: questionId,
-            type: questionType,
-            answer: answer,
-            field: questionField,
-            target: questionTarget,
-            target_type: questionTargetType,
-            schedule: currentSchedule
-        }),
+        body: JSON.stringify(requestBody),
     })
     .then(response => {
         if (!response.ok) {
@@ -185,11 +228,11 @@ function submitAnswer() {
         } else {
             // No more missing info questions
             allMissingInfoResolved = true;
-            document.getElementById('scheduleOutput').innerHTML = '<div class="info-message">Collecting your preferences to optimize the schedule...</div>';
+            document.getElementById('scheduleOutput').innerHTML = '<div class="info-message">Generating your optimized schedule...</div>';
             
-            // Automatically transition to preference questions
+            // Go directly to optimization
             setTimeout(() => {
-                getPreferenceQuestions();
+                generateOptimizedSchedule();
             }, 500);
         }
         
@@ -225,10 +268,8 @@ function setLoadingState(state) {
     let header = document.createElement('h2');
     if (state === 'missing_info') {
          header.textContent = "Looking for Missing Information...";
-    } else if (state === 'preferences') {
-         header.textContent = "Gathering Your Preferences...";
-    } else if (state === 'cooking') {
-         header.textContent = "Cooking Your Schedule...";
+    } else if (state === 'optimizing') {
+         header.textContent = "Optimizing Your Schedule...";
     } else {
          header.textContent = "Processing...";
     }
@@ -241,10 +282,8 @@ function setLoadingState(state) {
     let infoText = document.createElement('p');
     if (state === 'missing_info') {
          infoText.textContent = "We are collecting the missing information required.";
-    } else if (state === 'preferences') {
-         infoText.textContent = "We are gathering your preference inputs.";
-    } else if (state === 'cooking') {
-         infoText.textContent = "We are cooking your schedule!";
+    } else if (state === 'optimizing') {
+         infoText.textContent = "We are creating your optimized schedule!";
     }
     content.appendChild(infoText);
 
@@ -254,22 +293,8 @@ function setLoadingState(state) {
     document.body.appendChild(overlay);
 }
 
-function generateSchedule() {
-    const scheduleText = document.getElementById('scheduleText').value;
-    if (!scheduleText.trim()) {
-        alert('Please enter a schedule description');
-        return;
-    }
-
-    // Reset state
-    allMissingInfoResolved = false;
-    preferencesSubmitted = false;
-
-    // Get the button that was clicked to handle proper re-enabling
-    const submitBtn = document.querySelector('button[onclick="generateSchedule()"]');
-    submitBtn.disabled = true;
-    submitBtn.innerText = 'Submitting...';
-    
+// Add a parseSchedule function
+function parseSchedule(scheduleText, onSuccess) {
     setLoadingState('missing_info');
 
     fetch('http://localhost:5002/parse-schedule', {
@@ -295,171 +320,87 @@ function generateSchedule() {
         } else {
             // No questions, all info is complete
             allMissingInfoResolved = true;
-            document.getElementById('scheduleOutput').innerHTML = '<div class="info-message">Collecting your preferences to optimize the schedule...</div>';
             
-            // Automatically transition to preference questions
-            setTimeout(() => {
-                getPreferenceQuestions();
-            }, 500);
+            if (onSuccess) {
+                onSuccess();
+            }
         }
-        
-        // Re-enable the button
-        submitBtn.disabled = false;
-        submitBtn.innerText = 'Generate Schedule';
     })
     .catch(error => {
         console.error('Error:', error);
         document.getElementById('scheduleOutput').innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
         
-        // Re-enable the button
-        submitBtn.disabled = false;
-        submitBtn.innerText = 'Generate Schedule';
+        // Remove loading overlay
+        let overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+            overlay.remove();
+        }
     });
 }
 
-function getPreferenceQuestions() {
-    const scheduleOutput = document.getElementById('scheduleOutput');
-    setLoadingState('preferences');
-    
-    // If currentSchedule is null, try to retrieve from localStorage
-    if (!currentSchedule) {
-        const storedSchedule = localStorage.getItem('currentSchedule');
-        if (storedSchedule) {
-            currentSchedule = JSON.parse(storedSchedule);
-        } else {
-            scheduleOutput.innerHTML = '<div class="error-message">Error: No schedule available</div>';
-            return;
-        }
+// Update generateSchedule to use parseSchedule
+function generateSchedule() {
+    const scheduleText = document.getElementById('scheduleText').value;
+    if (!scheduleText.trim()) {
+        alert('Please enter a schedule description');
+        return;
     }
 
-    // Call backend to get preference questions
-    fetch('http://localhost:5002/preference-questions', {
-        method: 'GET',
+    // Reset state
+    allMissingInfoResolved = false;
+
+    // Get the button that was clicked to handle proper re-enabling
+    const submitBtn = document.querySelector('button[onclick="generateSchedule()"]');
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Submitting...';
+    
+    // Parse the schedule first, then generate optimized schedule
+    parseSchedule(scheduleText, () => {
+        document.getElementById('scheduleOutput').innerHTML = '<div class="info-message">Generating your optimized schedule...</div>';
+        
+        // Skip preferences and go directly to optimization
+        setTimeout(() => {
+            generateOptimizedSchedule();
+        }, 500);
+    });
+    
+    // Re-enable the button
+    setTimeout(() => {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Generate Schedule';
+    }, 1000);
+}
+
+// Update generateOptimizedSchedule function
+function generateOptimizedSchedule() {
+    setLoadingState('optimizing');
+    
+    // Call the backend directly to generate the optimized schedule
+    fetch('http://localhost:5002/generate-optimized-schedule', {
+        method: 'POST',
         headers: {
-            'Content-Type': 'application/json',
-        }
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            schedule: currentSchedule
+        })
     })
     .then(response => {
         if (!response.ok) {
-            throw new Error(`HTTP error ${response.status}`);
+            return response.json().then(data => {
+                throw new Error(data.error || 'Failed to generate optimized schedule');
+            });
         }
         return response.json();
     })
     .then(data => {
-        console.log('Preference questions:', data);
-        if (data.preference_questions && data.preference_questions.length > 0) {
-            // Show preference dialog with both preference and algorithm questions
-            showPreferenceDialog(data.preference_questions, data.algorithm_questions || []);
-        } else {
-            // No preferences needed, generate schedule directly
-            scheduleOutput.innerHTML = '<div class="info-message">No preference questions available. Generating optimized schedule...</div>';
-            generateOptimizedSchedule();
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        scheduleOutput.innerHTML = `<div class="error-message">Error getting preferences: ${error.message}</div>`;
-    });
-}
-
-function showPreferenceDialog(preferenceQuestions, algorithmQuestions) {
-    // Create a modal for preferences
-    const modal = document.createElement('div');
-    modal.id = 'preferenceDialog';
-    modal.className = 'dialog';
-    
-    const allQuestions = [...preferenceQuestions, ...algorithmQuestions];
-    
-    const content = document.createElement('div');
-    content.className = 'dialog-content';
-    content.innerHTML = `
-        <h2>Schedule Preferences</h2>
-        <p>Please set your preferences for schedule generation:</p>
-        <form id="preferenceForm">
-            ${allQuestions.map(q => createPreferenceInput(q)).join('')}
-            <div class="dialog-buttons">
-                <button type="button" onclick="cancelPreferences()">Cancel</button>
-                <button type="button" onclick="submitPreferences()">Generate Schedule</button>
-            </div>
-        </form>
-    `;
-    
-    modal.appendChild(content);
-    document.body.appendChild(modal);
-}
-
-function cancelPreferences() {
-    const dialog = document.getElementById('preferenceDialog');
-    if (dialog) {
-        document.body.removeChild(dialog);
-    }
-}
-
-function submitPreferences() {
-    const form = document.getElementById('preferenceForm');
-    if (!form) {
-        console.error('Preference form not found');
-        return;
-    }
-    
-    const formData = new FormData(form);
-    const preferences = {};
-    
-    // Convert form data to preferences object
-    for (const [key, value] of formData.entries()) {
-        if (key.includes('include_weekend') || key.includes('boolean')) {
-            preferences[key] = value === 'true';
-        } else if (!isNaN(value) && value !== '') {
-            preferences[key] = Number(value);
-        } else {
-            preferences[key] = value;
-        }
-    }
-    
-    console.log('Collected preferences:', preferences);
-    userPreferences = preferences;
-    
-    // Display message while submitting
-    const scheduleOutput = document.getElementById('scheduleOutput');
-    scheduleOutput.innerHTML = '<div class="info-message">Submitting preferences and generating your optimized schedule...</div>';
-    
-    // Close dialog
-    cancelPreferences();
-    
-    // Generate optimized schedule 
-    setTimeout(() => {
-        generateOptimizedSchedule();
-    }, 300);
-}
-
-// --- UPDATED generateOptimizedSchedule ---
-// --- UPDATED generateOptimizedSchedule ---
-function generateOptimizedSchedule() {
-    const scheduleOutput = document.getElementById('scheduleOutput');
-    setLoadingState('cooking');
-    
-    fetch('/generate-optimized-schedule', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            schedule: currentSchedule,
-            preferences: userPreferences
-        }),
-    })
-    .then(response => {
-        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-        return response.json();
-    })
-    .then(data => {
-        if (!data.schedule) throw new Error('No schedule data received');
-        currentSchedule = data.schedule;
-        localStorage.setItem('currentSchedule', JSON.stringify(currentSchedule));
-        // redirect to standalone schedule view
+        // Redirect to the schedule-only view
         window.location.href = '/schedule-only';
     })
     .catch(error => {
-        console.error('Error:', error);
-        scheduleOutput.innerHTML = `<div class="error-message">Error generating schedule: ${error.message}</div>`;
+        setLoadingState('none');
+        console.error('Error generating optimized schedule:', error);
+        document.getElementById('scheduleOutput').innerHTML = `<div class="error-message">Error generating optimized schedule: ${error.message}</div>`;
     });
 }
 
@@ -481,10 +422,24 @@ function displayFormattedSchedule(schedule) {
         maxTime = Math.max(maxTime, eh + em/60);
       });
     });
-    if (!isFinite(minTime)) [minTime, maxTime] = [9,17];
-    const startHour = Math.floor(minTime);
-    const endHour   = Math.ceil(maxTime);
-  
+    
+    // If there are no events or all events are after 8AM, start at 8AM
+    // Otherwise, use the earliest event time
+    const DEFAULT_START_HOUR = 8;
+    if (!isFinite(minTime)) {
+      minTime = DEFAULT_START_HOUR;
+      maxTime = 17; // Default end at 5PM
+    } else {
+      // If earliest event is after 8AM, start at 8AM
+      minTime = Math.min(DEFAULT_START_HOUR, minTime);
+    }
+    
+    // Use EXACT values without rounding for better precision
+    // We'll use the integer part for display but keep the exact value for calculations
+    const startHour = Math.floor(minTime); // We still need the integer for labels
+    const endHour = Math.ceil(maxTime);    // We still need the integer for labels
+    const exactStartHour = minTime;        // Keep exact value for precise calculations
+
     const days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
     const hourCount = endHour - startHour + 1;
     
@@ -508,6 +463,10 @@ function displayFormattedSchedule(schedule) {
       container.appendChild(dh);
     });
   
+    // Store cell references for precise mathematical positioning
+    const dayCellsByColumn = {};
+    const headerHeight = corner.offsetHeight;
+
     // 4) time labels + blank cells
     for (let i=0; i<=endHour-startHour; i++) {
       const hour = startHour + i;
@@ -525,8 +484,20 @@ function displayFormattedSchedule(schedule) {
         cell.style.gridRowStart = i+2;
         cell.style.gridColumnStart = d+2;
         container.appendChild(cell);
+        
+        // Store cells by column index for precise positioning later
+        if (!dayCellsByColumn[d+2]) {
+          dayCellsByColumn[d+2] = [];
+        }
+        dayCellsByColumn[d+2].push(cell);
       });
     }
+  
+    // Get the first cell's position to use as a reference
+    const firstCellPosition = {
+      top: dayCellsByColumn[2]?.[0]?.offsetTop || headerHeight,
+      left: dayCellsByColumn[2]?.[0]?.offsetLeft || 70
+    };
   
     // 5) events - Create events and position them correctly with CSS grid
     days.forEach((day, di) => {
@@ -537,18 +508,6 @@ function displayFormattedSchedule(schedule) {
         const [sh, sm] = ev.start_time.split(':').map(Number);
         const [eh, em] = ev.end_time.split(':').map(Number);
         
-        // Calculate grid row positions
-        const startRow = (sh - startHour) + (sm / 60) + 2;
-        const endRow = (eh - startHour) + (em / 60) + 2;
-        
-        // Format time for display
-        const startLabel = formatTime(ev.start_time).replace(':00','').replace(' ','');
-        const endLabel = formatTime(ev.end_time).replace(':00','').replace(' ','');
-        const title = `${startLabel}–${endLabel}`;
-        
-        // Get simplified event description
-        const simpleDescription = getSimpleEventType(ev);
-        
         // Create the event element
         const eventElement = document.createElement('div');
         eventElement.className = 'event-block';
@@ -558,6 +517,14 @@ function displayFormattedSchedule(schedule) {
           eventElement.classList.add(ev.type.toLowerCase());
         }
         
+        // Format time for display
+        const startLabel = formatTime(ev.start_time).replace(':00','').replace(' ','');
+        const endLabel = formatTime(ev.end_time).replace(':00','').replace(' ','');
+        const title = `${startLabel}–${endLabel}`;
+        
+        // Get simplified event description
+        const simpleDescription = getSimpleEventType(ev);
+        
         // Build the HTML content
         eventElement.innerHTML = `
           <div><strong>${title}</strong></div>
@@ -565,14 +532,63 @@ function displayFormattedSchedule(schedule) {
           ${ev.course_code ? `<div class="course-code">${ev.course_code}</div>` : ''}
         `;
         
-        // Position using grid
-        eventElement.style.gridColumnStart = di + 2; // +2 for time label column
-        eventElement.style.gridColumnEnd = di + 3;
-        eventElement.style.gridRowStart = startRow;
-        eventElement.style.gridRowEnd = endRow;
-        
-        // Add to the container
+        // Add to container first (needed to calculate positions correctly)
         container.appendChild(eventElement);
+        
+        // Calculate the correct column for this day
+        const dayColumn = di + 2; // +2 for time label column
+        
+        // EXACT mathematical positioning - no more relying on offsetTop!
+        // Calculate exact position based on time difference from start hour
+        const hourDiffFromStart = (sh - startHour) + (sm / 60);
+        
+        // Get the first cell in the column to determine left position
+        const columnCells = dayCellsByColumn[dayColumn] || [];
+        const firstColumnCell = columnCells[0] || null;
+        
+        // Calculate the exact position mathematically
+        // This is the EXACT pixel position based on hours and minutes
+        const startPosition = firstCellPosition.top + (hourDiffFromStart * hourRowHeight);
+        
+        // Calculate the exact height based on the duration
+        // Convert time difference to minutes then to pixels
+        const durationInHours = ((eh - sh) * 60 + (em - sm)) / 60;
+        const height = durationInHours * hourRowHeight;
+        
+        // Get left position from column reference cell
+        const leftPosition = firstColumnCell ? firstColumnCell.offsetLeft : (70 + (dayColumn - 2) * 100);
+        const cellWidth = firstColumnCell ? firstColumnCell.offsetWidth : 100;
+        
+        // Log positioning data for debugging
+        console.log(`EXACT Event Positioning: ${ev.description || simpleDescription}, Time: ${ev.start_time}-${ev.end_time}`);
+        console.log(`  EXACT startPosition: ${startPosition}px, height: ${height}px`);
+        console.log(`  Math: sh=${sh}, sm=${sm}, startHour=${startHour}, hourDiffFromStart=${hourDiffFromStart}`);
+        console.log(`  EXACT Calculation: ${firstCellPosition.top} + (${hourDiffFromStart} * ${hourRowHeight}) = ${startPosition}`);
+        
+        // Apply positioning with !important to override any CSS rules
+        // Use the EXACT mathematical values
+        eventElement.setAttribute('style', `
+          position: absolute !important;
+          top: ${startPosition}px !important;
+          height: ${Math.max(20, height)}px !important;
+          left: ${leftPosition + 1}px !important;
+          width: ${cellWidth - 4}px !important;
+          box-sizing: border-box !important;
+          margin: 0 !important;
+          padding: 10px 12px !important;
+          z-index: 10 !important;
+          transition: none !important;
+          transform: none !important;
+        `);
+        
+        // Add a data attribute to help with debugging
+        eventElement.setAttribute('data-time', `${ev.start_time}-${ev.end_time}`);
+        eventElement.setAttribute('data-day', day);
+        eventElement.setAttribute('data-exact-top', startPosition);
+        eventElement.setAttribute('data-hour-diff', hourDiffFromStart);
+        
+        // Add a debug class to show positioning information
+        eventElement.classList.add('js-positioned');
       });
     });
     
@@ -584,8 +600,23 @@ function displayFormattedSchedule(schedule) {
         grid-template-columns: 70px repeat(7, 1fr);
         position: relative;
       }
+      .calendar-container .day-cell {
+        position: relative;
+        box-sizing: border-box;
+        height: ${hourRowHeight}px;
+        min-width: 80px;
+        border-width: 0 1px 1px 0;
+      }
+      /* Override default event-block positioning from calendar.css */
+      .calendar-container .event-block.js-positioned {
+        position: absolute !important;
+        margin: 0 !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
+        min-height: 0 !important; /* Remove min-height constraint */
+      }
+      /* Coloring for different event types */
       .calendar-container .event-block {
-        position: relative !important;
         background: rgba(51, 153, 255, 0.1);
         border-left: 4px solid #3399ff;
         border-radius: 6px;
@@ -593,8 +624,6 @@ function displayFormattedSchedule(schedule) {
         font-size: 0.9rem;
         color: #333;
         box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-        margin: 2px;
-        z-index: 10;
       }
       .calendar-container .event-block.exam {
         background: rgba(239, 71, 111, 0.1);
@@ -751,81 +780,6 @@ function formatDuration(minutes) {
     } else {
         return `${mins} min`;
     }
-}
-
-// --- ORIGINAL createPreferenceInput FUNCTION ---
-// This function is kept unchanged from your version.
-function createPreferenceInput(question) {
-    let inputHtml = '';
-    
-    switch (question.type) {
-        case 'time':
-            // Convert default value (if any) to input format
-            let defaultTime = question.default || '';
-            if (defaultTime && defaultTime.includes(':')) {
-                const [hours, minutes] = defaultTime.split(':');
-                defaultTime = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
-            }
-            
-            inputHtml = `
-                <div class="form-group">
-                    <label for="${question.id}">${question.text}</label>
-                    <input type="time" id="${question.id}" name="${question.id}" value="${defaultTime}">
-                </div>
-            `;
-            break;
-            
-        case 'single_choice':
-            inputHtml = `
-                <div class="form-group">
-                    <label>${question.text}</label>
-                    <select id="${question.id}" name="${question.id}">
-                        ${question.options.map(option => 
-                            `<option value="${option.value}" ${question.default === option.value ? 'selected' : ''}>${option.text}</option>`
-                        ).join('')}
-                    </select>
-                </div>
-            `;
-            break;
-            
-        case 'boolean':
-            inputHtml = `
-                <div class="form-group">
-                    <label>${question.text}</label>
-                    <div class="radio-group">
-                        <label>
-                            <input type="radio" name="${question.id}" value="true" ${question.default ? 'checked' : ''}>
-                            Yes
-                        </label>
-                        <label>
-                            <input type="radio" name="${question.id}" value="false" ${!question.default ? 'checked' : ''}>
-                            No
-                        </label>
-                    </div>
-                </div>
-            `;
-            break;
-            
-        case 'number':
-            inputHtml = `
-                <div class="form-group">
-                    <label for="${question.id}">${question.text}</label>
-                    <input type="number" id="${question.id}" name="${question.id}" 
-                        min="${question.min || 0}" max="${question.max || 100}" value="${question.default || ''}">
-                </div>
-            `;
-            break;
-            
-        default:
-            inputHtml = `
-                <div class="form-group">
-                    <label for="${question.id}">${question.text}</label>
-                    <input type="text" id="${question.id}" name="${question.id}" value="${question.default || ''}">
-                </div>
-            `;
-    }
-    
-    return inputHtml;
 }
 
 // Function to simplify event descriptions

@@ -1,6 +1,10 @@
 """
 Preference Questions Module for EEP1.
 
+NOTE: This module is no longer actively used in the current implementation.
+It is kept for reference purposes only, as the application no longer asks for user preferences.
+The schedule generation now uses default values directly instead of user-provided preferences.
+
 This module provides functions to get preference and algorithm questions for the schedule generator.
 These questions are used to customize the scheduling algorithm after all required information is collected.
 """

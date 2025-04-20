@@ -61,6 +61,7 @@ def convert_to_24h(time_str: str) -> str:
     if time_str == "midnight":
         return "00:00"
     try:
+        # Handle explicit AM/PM
         if "am" in time_str or "pm" in time_str:
             time_parts = time_str.replace("am", "").replace("pm", "").strip().split(":")
             hours = int(time_parts[0])
@@ -70,16 +71,39 @@ def convert_to_24h(time_str: str) -> str:
             elif "am" in time_str and hours == 12:
                 hours = 0
             return f"{hours:02d}:{minutes:02d}"
+        # Simple digit-only case
         if time_str.isdigit():
             hours = int(time_str)
+            # Flag ambiguous times (1-12) that don't specify AM/PM
+            if 1 <= hours <= 12:
+                return "AMBIGUOUS:" + time_str
+            # Assume 24-hour format for values > 12
             return f"{hours:02d}:00"
+        # Handle HH:MM format without AM/PM
         if ":" in time_str:
             hours, minutes = map(int, time_str.split(":"))
+            # Flag ambiguous times (1-12) that don't specify AM/PM
+            if 1 <= hours <= 12:
+                return "AMBIGUOUS:" + time_str
+            # Assume 24-hour format for values > 12
             return f"{hours:02d}:{minutes:02d}"
         return time_str
     except Exception:
         return time_str
 
+def is_time_ambiguous(time_str: str) -> bool:
+    """Check if a time string is ambiguous (lacks AM/PM specification when needed)"""
+    if not time_str:
+        return False
+    if isinstance(time_str, str) and time_str.startswith("AMBIGUOUS:"):
+        return True
+    return False
+
+def get_clean_time(time_str: str) -> str:
+    """Remove the AMBIGUOUS flag from a time string"""
+    if isinstance(time_str, str) and time_str.startswith("AMBIGUOUS:"):
+        return time_str[10:]
+    return time_str
 
 def validate_and_fix_times(data: dict) -> dict:
     for task in data.get("tasks", []):
@@ -99,7 +123,12 @@ def validate_and_fix_times(data: dict) -> dict:
 def check_missing_info(schedule: dict) -> list:
     logger = logging.getLogger(__name__)
     
-    questions = []
+    # Create separate lists for different types of questions to allow prioritization
+    day_questions = []
+    time_questions = []
+    ampm_questions = [] # New list for AM/PM clarification questions
+    duration_questions = []
+    course_code_questions = []
     
     logger.info("Starting check_missing_info function")
     
@@ -147,8 +176,8 @@ def check_missing_info(schedule: dict) -> list:
         # Check if this description appears more than once
         if meeting_counts.get(desc, 0) > 1:
             # Include time in the description if available
-            if meeting.get("time"):
-                return f"{desc} at {meeting.get('time')}"
+            if meeting.get("time") and not is_time_ambiguous(meeting.get("time")):
+                return f"{desc} at {get_clean_time(meeting.get('time'))}"
             # Include day if available
             elif meeting.get("day"):
                 return f"{desc} on {meeting.get('day')}"
@@ -159,8 +188,47 @@ def check_missing_info(schedule: dict) -> list:
     for meeting in schedule.get("meetings", []):
         specific_desc = get_specific_description(meeting)
         
-        if not meeting.get("time"):
-            questions.append({
+        # Check for missing day - essential for scheduling
+        if not meeting.get("day"):
+            day_questions.append({
+                "type": "day",
+                "question": f"On which day of the week is the {specific_desc}?",
+                "field": "day",
+                "target": meeting.get("description"),
+                "target_type": "meeting",
+                "target_id": meeting.get("id"),
+                "input_type": "dropdown",
+                "options": [
+                    {"value": "Monday", "text": "Monday"},
+                    {"value": "Tuesday", "text": "Tuesday"},
+                    {"value": "Wednesday", "text": "Wednesday"},
+                    {"value": "Thursday", "text": "Thursday"},
+                    {"value": "Friday", "text": "Friday"},
+                    {"value": "Saturday", "text": "Saturday"},
+                    {"value": "Sunday", "text": "Sunday"}
+                ]
+            })
+        
+        # Check for ambiguous time (missing AM/PM)
+        if meeting.get("time") and is_time_ambiguous(meeting.get("time")):
+            clean_time = get_clean_time(meeting.get("time"))
+            ampm_questions.append({
+                "type": "ampm",
+                "question": f"Is {clean_time} for the {specific_desc} AM or PM?",
+                "field": "time_ampm",
+                "target": meeting.get("description"),
+                "target_type": "meeting",
+                "target_id": meeting.get("id"),
+                "original_time": clean_time,
+                "input_type": "dropdown",
+                "options": [
+                    {"value": "am", "text": "AM"},
+                    {"value": "pm", "text": "PM"}
+                ]
+            })
+        # Check for missing time
+        elif not meeting.get("time"):
+            time_questions.append({
                 "type": "time",
                 "question": f"What time is the {specific_desc}?",
                 "field": "time",
@@ -168,17 +236,18 @@ def check_missing_info(schedule: dict) -> list:
                 "target_type": "meeting",
                 "target_id": meeting.get("id")
             })
+        
         if not meeting.get("duration_minutes"):
-            questions.append({
+            duration_questions.append({
                 "type": "duration",
-                "question": f"How long is the {specific_desc}?",
+                "question": f"How long is the {specific_desc} (in minutes)?",
                 "field": "duration_minutes",
                 "target": meeting.get("description"),
                 "target_type": "meeting",
                 "target_id": meeting.get("id")
             })
         if not meeting.get("course_code") and meeting.get("type") in ["exam", "presentation"]:
-            questions.append({
+            course_code_questions.append({
                 "type": "course_code",
                 "question": f"What is the course code for the {specific_desc}?",
                 "field": "course_code",
@@ -187,10 +256,51 @@ def check_missing_info(schedule: dict) -> list:
                 "target_id": meeting.get("id")
             })
     
-    # Check tasks - only ask for course_code when not related to a meeting we're already asking about
+    # Check tasks - ask for day if missing, and course_code when not related to a meeting we're already asking about
     for task in schedule.get("tasks", []):
         # DEBUG: Log task properties
-        logger.info(f"Checking task: {task.get('description')}, course_code: {task.get('course_code')}, category: {task.get('category')}, missing_info: {task.get('missing_info')}")
+        logger.info(f"Checking task: {task.get('description')}, course_code: {task.get('course_code')}, category: {task.get('category')}, day: {task.get('day')}, missing_info: {task.get('missing_info')}")
+        
+        # Check for missing day on tasks that need scheduling
+        if not task.get("day") and task.get("is_fixed_time", False):
+            task_desc = task.get("description", "")
+            day_questions.append({
+                "type": "day",
+                "question": f"On which day of the week is the task '{task_desc}'?",
+                "field": "day",
+                "target": task_desc,
+                "target_type": "task",
+                "target_id": task.get("id"),
+                "input_type": "dropdown",
+                "options": [
+                    {"value": "Monday", "text": "Monday"},
+                    {"value": "Tuesday", "text": "Tuesday"},
+                    {"value": "Wednesday", "text": "Wednesday"},
+                    {"value": "Thursday", "text": "Thursday"},
+                    {"value": "Friday", "text": "Friday"},
+                    {"value": "Saturday", "text": "Saturday"},
+                    {"value": "Sunday", "text": "Sunday"}
+                ]
+            })
+        
+        # Check for ambiguous time (missing AM/PM)
+        if task.get("time") and is_time_ambiguous(task.get("time")) and task.get("is_fixed_time", False):
+            clean_time = get_clean_time(task.get("time"))
+            task_desc = task.get("description", "")
+            ampm_questions.append({
+                "type": "ampm",
+                "question": f"Is {clean_time} for the task '{task_desc}' AM or PM?",
+                "field": "time_ampm",
+                "target": task_desc,
+                "target_type": "task",
+                "target_id": task.get("id"),
+                "original_time": clean_time,
+                "input_type": "dropdown",
+                "options": [
+                    {"value": "am", "text": "AM"},
+                    {"value": "pm", "text": "PM"}
+                ]
+            })
         
         # Only process tasks that don't have a course code and are preparation tasks
         if not task.get("course_code") and task.get("category") == "preparation":
@@ -217,7 +327,7 @@ def check_missing_info(schedule: dict) -> list:
             # Only add the question if we shouldn't skip it
             if not should_skip:
                 logger.info(f"Adding course code question for task: {task.get('description')}")
-                questions.append({
+                course_code_questions.append({
                     "type": "course_code",
                     "question": f"What is the course code for the {task.get('description')}?",
                     "field": "course_code",
@@ -228,7 +338,10 @@ def check_missing_info(schedule: dict) -> list:
             else:
                 logger.info(f"Skipping course code question for task: {task.get('description')}")
     
-    logger.info(f"Final questions list: {questions}")
+    # Combine questions in priority order: day, ampm, time, duration, course_code
+    questions = day_questions + ampm_questions + time_questions + duration_questions + course_code_questions
+    
+    logger.info(f"Final questions list (prioritized): {questions}")
     return questions
 
 
@@ -264,6 +377,30 @@ def clean_schedule(schedule: dict) -> dict:
 def convert_answer_value(answer_type: str, value: str) -> any:
     if answer_type == "duration":
         return int(value)
+    elif answer_type == "day":
+        # Capitalize the day name for consistency
+        day_value = value.strip().capitalize()
+        # Ensure it's a valid day of the week
+        valid_days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        if day_value in valid_days:
+            return day_value
+        # If it's a shortened form, expand it
+        day_map = {
+            'Mon': 'Monday',
+            'Tues': 'Tuesday',
+            'Tue': 'Tuesday', 
+            'Wed': 'Wednesday',
+            'Thurs': 'Thursday',
+            'Thu': 'Thursday',
+            'Th': 'Thursday',
+            'Fri': 'Friday',
+            'Sat': 'Saturday',
+            'Sun': 'Sunday'
+        }
+        if day_value in day_map:
+            return day_map[day_value]
+        # Return as is if not recognized
+        return day_value
     return value
 
 

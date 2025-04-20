@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from copy import deepcopy
 import logging
 from prompts import PARSING_PROMPT
-from preference_questions import get_preference_questions, get_algorithm_questions, get_default_preferences
+from preference_questions import get_default_preferences
 from helpers import save_schedule, load_schedule, convert_to_24h, validate_and_fix_times, check_missing_info, clean_missing_info_from_tasks, clean_schedule, convert_answer_value, update_schedule_with_answers, ensure_ids, STORAGE_PATH, FINAL_PATH
 import uuid
 from schedule_prompts import get_schedule_prompt, get_response_parsing_prompt
@@ -176,6 +176,14 @@ def answer_question():
                     
                     if answer_type == 'time':
                         item['time'] = convert_to_24h(answer_value)
+                    elif answer_type == 'ampm':
+                        # Handle AM/PM clarification
+                        original_time = data.get('original_time')
+                        if original_time and answer_value:
+                            # Construct full time string with AM/PM and convert
+                            full_time = f"{original_time} {answer_value}"
+                            item['time'] = convert_to_24h(full_time)
+                            logger.info(f"Updated time for {item.get('description')} from ambiguous {original_time} to {item['time']} based on {answer_value}")
                     elif answer_type == 'duration':
                         try:
                             item['duration_minutes'] = int(answer_value)
@@ -210,11 +218,25 @@ def answer_question():
                                     else:
                                         logger.info(f"No course_code in missing_info or no missing_info field")
                                     logger.info(f"Propagated course code {answer_value} to task {task.get('description')}")
+                    elif answer_type == 'day':
+                        # Capitalize the day name for consistency
+                        day_value = answer_value.strip().capitalize()
+                        # Make sure it's a valid day of the week
+                        valid_days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                        if day_value in valid_days:
+                            item['day'] = day_value
+                            logger.info(f"Updated day for {item.get('description')} to {day_value}")
+                        else:
+                            logger.warning(f"Invalid day value received: {day_value}")
+                            # Use the value anyway, but log a warning
+                            item['day'] = day_value
 
                     field_map = {
                         'time': 'time',
+                        'ampm': 'time', # Map ampm to time field for missing_info updates
                         'duration': 'duration_minutes',
-                        'course_code': 'course_code'
+                        'course_code': 'course_code',
+                        'day': 'day'
                     }
                     if field_map[answer_type] in item.get('missing_info', []):
                         item['missing_info'].remove(field_map[answer_type])
@@ -294,23 +316,10 @@ def handle_missing_info():
 # -------------------------------
 # Preferences and Optimization Endpoints
 # -------------------------------
-@app.route('/preference-questions', methods=['GET'])
-def get_preference_questions_endpoint():
-    try:
-        preferences = get_preference_questions()
-        algorithm = get_algorithm_questions()
-        return jsonify({
-            "preference_questions": preferences,
-            "algorithm_questions": algorithm
-        })
-    except Exception as e:
-        logger.error(f"Error getting preference questions: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
 @app.route('/construct-schedule-prompt', methods=['POST'])
 def construct_schedule_prompt():
     """
-    Construct a prompt for the LLM based on schedule data and preferences.
+    Construct a prompt for the LLM based on schedule data.
     This is called by IEP2 before it makes the LLM API call.
     """
     try:
@@ -336,9 +345,6 @@ def construct_schedule_prompt():
                 'message': 'Schedule must contain "meetings" and "tasks" arrays'
             }), 400
             
-        # Get preferences
-        preferences = data.get('preferences', get_default_preferences())
-        
         # Apply any business logic needed before creating the prompt
         # For example, ensure all tasks and meetings have IDs
         for collection in ['meetings', 'tasks']:
@@ -352,24 +358,15 @@ def construct_schedule_prompt():
                 priority = task.get('priority', 'medium').lower()
                 task['duration_minutes'] = 240 if priority in ['high', '1', 'urgent'] else 180
                 
-        # Ensure all meetings have required fields
-        for meeting in schedule_data.get('meetings', []):
-            if not meeting.get('duration') and meeting.get('duration_minutes'):
-                meeting['duration'] = meeting['duration_minutes']
-                
-        # Build the prompt using the helper function
-        prompt = get_schedule_prompt(schedule_data, preferences)
-        
-        logger.info(f"Generated prompt with length: {len(prompt)}")
+        # Get the prompt from the schedule_prompts module
+        prompt = get_schedule_prompt(schedule_data)
         
         return jsonify({
             'prompt': prompt,
-            'schedule_data': schedule_data,
-            'preferences': preferences
+            'schedule': schedule_data
         })
-        
     except Exception as e:
-        logger.error(f"Error constructing prompt: {str(e)}", exc_info=True)
+        logger.error(f"Error constructing prompt: {str(e)}")
         return jsonify({'error': str(e)}), 500
         
 @app.route('/parse-schedule-llm-response', methods=['POST'])
@@ -512,112 +509,55 @@ def generate_optimized_schedule():
                 'questions': questions
             }), 400
             
-        preferences = data.get('preferences', {})
-        if not preferences:
-            preferences = get_default_preferences()
-            logger.info("Using default preferences for schedule generation")
-        
         cleaned_schedule = clean_schedule(schedule)
         logger.info("Preparing to generate schedule...")
         
-        # Step 1: Generate the prompt directly (don't call our own API)
         try:
-            # Prepare schedule data and ensure IDs
-            for collection in ['meetings', 'tasks']:
-                for item in cleaned_schedule.get(collection, []):
-                    if 'id' not in item or not item['id']:
-                        item['id'] = str(uuid.uuid4())
-                        
-            # Pre-process task durations
-            for task in cleaned_schedule.get('tasks', []):
-                if task.get('duration_minutes') in [None, '', 'null']:
-                    priority = task.get('priority', 'medium').lower()
-                    task['duration_minutes'] = 240 if priority in ['high', '1', 'urgent'] else 180
-                    
-            # Ensure all meetings have required fields
-            for meeting in cleaned_schedule.get('meetings', []):
-                if not meeting.get('duration') and meeting.get('duration_minutes'):
-                    meeting['duration'] = meeting['duration_minutes']
-                    
-            # Generate the prompt directly
-            prompt = get_schedule_prompt(cleaned_schedule, preferences)
-            logger.info(f"Generated prompt with length: {len(prompt)}")
+            # Generate the prompt using our helper function
+            prompt = get_schedule_prompt(cleaned_schedule)
             
-        except Exception as e:
-            logger.error(f"Error generating prompt: {str(e)}")
-            return jsonify({'error': f'Failed to generate prompt: {str(e)}'}), 500
-        
-        if not prompt:
-            return jsonify({'error': 'Failed to generate prompt - empty result'}), 500
-        
-        # Step 2: Call IEP2 with the prompt
-        logger.info(f"Calling IEP2 with prompt length: {len(prompt)}")
-        try:
-            iep2_response = requests.post(
+            # Call IEP2 to get the LLM response
+            response = requests.post(
                 f"{IEP2_URL}/api/generate",
                 json={
                     'prompt': prompt,
                     'max_tokens': 4000,
                     'temperature': 0.2
                 },
-                timeout=60  # Longer timeout for Anthropic API
+                timeout=60
             )
             
-            if iep2_response.status_code != 200:
-                logger.error(f"IEP2 error: {iep2_response.text}")
-                return jsonify({'error': f'IEP2 error: {iep2_response.text}'}), iep2_response.status_code
+            if response.status_code != 200:
+                return jsonify({'error': f'Failed to generate schedule: {response.text}'}), 500
                 
-            # Get the raw Anthropic API response
-            anthropic_response = iep2_response.json()
-            logger.info("Received response from IEP2, extracting text from response")
+            # Extract content from the LLM response
+            llm_response_data = response.json()
+            llm_response = ""
             
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error calling IEP2: {str(e)}")
-            return jsonify({'error': f'Error calling IEP2: {str(e)}'}), 500
-        
-        # Step 3: Extract the text from the Anthropic response
-        content_list = anthropic_response.get('content', [])
-        if not content_list or not isinstance(content_list, list) or len(content_list) == 0:
-            logger.error(f"Invalid response format from IEP2: {anthropic_response}")
-            return jsonify({'error': 'Invalid response format from IEP2'}), 500
+            # Extract the actual content from the Claude response format
+            if 'content' in llm_response_data:
+                for content_item in llm_response_data['content']:
+                    if content_item.get('type') == 'text':
+                        llm_response += content_item.get('text', '')
             
-        llm_response = content_list[0].get('text', '')
-        if not llm_response:
-            logger.error("Empty text content in Anthropic response")
-            return jsonify({'error': 'Empty response from Anthropic API'}), 500
-            
-        logger.info(f"Extracted text from Anthropic response (length: {len(llm_response)})")
-        
-        # Step 4: Parse the LLM response text
-        try:
-            # Extract generated calendar from LLM response
-            generated_calendar = None
-            
-            # First attempt: try to parse the response directly as JSON
+            # Try to extract the calendar part from the response
             try:
-                # Try to find a JSON object in the response
+                # Find JSON object in the response
                 json_start = llm_response.find('{')
                 json_end = llm_response.rfind('}') + 1
                 
                 if json_start >= 0 and json_end > json_start:
                     json_str = llm_response[json_start:json_end]
-                    parsed_response = json.loads(json_str)
-                    
-                    # Check if it's a complete calendar object or just the generated_calendar
-                    if "generated_calendar" in parsed_response:
-                        generated_calendar = parsed_response["generated_calendar"]
-                    else:
-                        # Assume the entire object is the calendar
-                        generated_calendar = parsed_response
+                    generated_calendar = json.loads(json_str)
                 else:
-                    logger.warning("Could not find JSON in LLM response")
-            except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse LLM response as JSON: {e}")
+                    generated_calendar = None
+            except json.JSONDecodeError:
+                generated_calendar = None
                 
             # If we couldn't parse it, we need further processing
             if not generated_calendar:
                 # Call IEP1 to help parse the response
-                parsing_prompt = get_response_parsing_prompt(llm_response, {'schedule': cleaned_schedule, 'preferences': preferences})
+                parsing_prompt = get_response_parsing_prompt(llm_response, {'schedule': cleaned_schedule})
                 
                 parsing_response = requests.post(
                     f"{IEP1_URL}/predict",
@@ -650,38 +590,25 @@ def generate_optimized_schedule():
             if not generated_calendar:
                 return jsonify({'error': 'Could not extract valid schedule from LLM response'}), 500
                 
-            # Now construct the final schedule
-            schedule_out = {
+            # Merge the generated calendar into the schedule
+            final_schedule = {
                 'meetings': cleaned_schedule.get('meetings', []),
                 'tasks': cleaned_schedule.get('tasks', []),
                 'course_codes': cleaned_schedule.get('course_codes', []),
                 'generated_calendar': generated_calendar
             }
             
-            # Construct the complete response
-            result = {
-                'success': True,
-                'schedule': schedule_out,
-                'message': 'Schedule successfully generated using LLM'
-            }
-            
             # Save the final schedule
-            save_schedule(schedule_out, FINAL_PATH)
-            logger.info("Successfully generated and saved schedule")
+            save_schedule(final_schedule, path=FINAL_PATH)
             
-            return jsonify(result)
+            return jsonify(final_schedule)
             
         except Exception as e:
-            logger.error(f"Error parsing LLM response: {str(e)}", exc_info=True)
-            return jsonify({'error': f'Error parsing LLM response: {str(e)}'}), 500
+            logger.error(f"Error in schedule generation: {str(e)}")
+            return jsonify({'error': f'Error generating schedule: {str(e)}'}), 500
             
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error communicating with services: {str(e)}")
-        return jsonify({
-            'error': f'Error communicating with services: {str(e)}'
-        }), 500
     except Exception as e:
-        logger.error(f"Error generating optimized schedule: {str(e)}", exc_info=True)
+        logger.error(f"Error in generate_optimized_schedule: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 # -------------------------------
