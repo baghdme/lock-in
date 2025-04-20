@@ -9,10 +9,10 @@ services:
       - "5002:5002"
     environment:
       - EEP1_URL=http://eep1:5000
-      - AUTH_SERVICE_URL=http://auth-service:5004
+    volumes:
+      - ./UI/instance:/app/instance
     depends_on:
       - eep1
-      - auth-service
     networks:
       - app-network
 
@@ -24,11 +24,14 @@ services:
       - "5000:5000"
     environment:
       - IEP1_URL=http://iep1:5001
-      - STORAGE_DIR=/app/data
+      - IEP2_URL=http://iep2:5004
+      - STORAGE_DIR=/app/storage
     volumes:
-      - ./EEP1/data:/app/data
+      - eep1_storage:/app/storage
+      - eep1_persistence:/app/persistence
     depends_on:
       - iep1
+      - iep2
     networks:
       - app-network
 
@@ -41,30 +44,21 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
-      - ./IEP1/data:/app/data
+      - iep1_storage:/app/storage
     networks:
       - app-network
 
-  auth-service:
+  iep2:
     build:
-      context: ./auth-service
+      context: ./IEP2
       dockerfile: Dockerfile
     ports:
       - "5004:5004"
     environment:
-      - MONGODB_URI=mongodb://mongo:27017/
-      - JWT_SECRET=${JWT_SECRET}
-    depends_on:
-      - mongo
-    networks:
-      - app-network
-
-  mongo:
-    image: mongo:latest
-    ports:
-      - "27017:27017"
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-claude-3-7-sonnet-20250219}
     volumes:
-      - mongodb_data:/data/db
+      - iep2_storage:/app/storage
     networks:
       - app-network
 
@@ -73,6 +67,7 @@ networks:
     driver: bridge
 
 volumes:
-  mongodb_data:
-  schedule_storage:
   eep1_storage:
+  eep1_persistence:
+  iep1_storage:
+  iep2_storage:

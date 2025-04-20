@@ -1,4 +1,3 @@
-# Use Python 3.11 slim image as base
 FROM python:3.11-slim
 
 # Set working directory
@@ -11,12 +10,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt gunicorn
 
 # Copy the application code
-COPY parser.py .
+COPY . .
 
 # Set environment variables
 ENV FLASK_APP=parser.py
-ENV FLASK_ENV=development
-ENV FLASK_DEBUG=1
+ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 
 # Create storage directory

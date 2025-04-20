@@ -1,74 +1,66 @@
 """Prompts used in the schedule parsing and modification system."""
 
-PARSING_PROMPT = """You are a task parsing assistant for a weekly scheduling system. Parse the following weekly overview text into structured information following these rules:
+PARSING_PROMPT = """You are an expert schedule parsing AI with advanced natural language understanding. Your goal is to parse unstructured schedule text into a highly structured, consistent JSON format. Only extract exactly what's mentioned in the text without making inferences about additional tasks or events that aren't explicitly stated.
 
-1. Input Understanding:
-   - The user provides descriptions of events and their related tasks
-   - Fixed events can be: exams, meetings, presentations, project deadlines, interviews, etc.
-   - For each main event, ALWAYS create preparation tasks but NEVER assign specific times to them
-   - Course codes should be extracted from the input text when present (e.g., "CMPS350", "EECE503")
-   - Examples:
-       "I have a CMPS350 exam" -> Create exam event with course_code "CMPS350" AND preparation task
-       "Team presentation for EECE503" -> Create presentation event with course_code "EECE503" AND preparation task
-       "I have an exam" -> Create exam event (with missing course_code) AND preparation task
-
-2. Event Classification:
-   - Fixed Events (treated as meetings):
-     * Exams: MUST have specific time/day when scheduled
-     * Presentations: MUST have specific time/day when scheduled
-     * Project deadlines: MUST have specific time/day when scheduled
-     * Team meetings: MUST have specific time/day when scheduled
+1. Natural Language Understanding:
+   - Carefully identify events and tasks that are explicitly mentioned in the text
+   - Recognize natural time expressions: "after that", "right after", "before noon", "evening", "later that day"
+   - When events have relationships (like "after my exam"), properly sequence them
+   - If a specific time property (like duration) is mentioned anywhere in the text, associate it with the correct event
+   - MAINTAIN DAY CONTEXT: When multiple events are mentioned in sequence like "I have an event on [day] at [time1] and another one at [time2]", both events are on the SAME DAY unless explicitly stated otherwise
    
-   - Preparation Tasks:
-     * ALWAYS create for exams, presentations, and major deadlines
-     * NEVER assign specific times (always set time: null, is_fixed_time: false)
-     * MUST specify estimated duration_minutes or flag as missing
-     * MUST be linked to their main event via related_event
-     * MUST inherit course_code from their related event
+2. Contextual Inference:
+   - When duration is specified ("2-hour yoga", "30-minute meeting"), extract it correctly without asking later
+   - Avoid inferring properties unless clearly implied - don't guess missing information
+   - Carefully separate qualifiers that belong to different events even in complex sentences
+   - DAY INHERITANCE: When phrases like "another one", "the next one", "a second exam", "then", or "followed by" are used without specifying a new day, ALWAYS inherit the previously mentioned day
 
-3. Missing Information Detection:
+3. Event Classification:
+   - Fixed Events (treated as meetings):
+     * Exams, Presentations, Project deadlines, Team meetings, Classes, Sessions, Activities (like "yoga session")
+     * Capture the exact time/day/duration when provided in any format
+   
+   - Only create tasks or events EXPLICITLY mentioned in the text
+     * NEVER create preparation tasks or other events unless specifically mentioned
+     * NEVER infer the need for a preparation task based on the presence of an exam or presentation
+   
+4. Smart Missing Information Detection:
+   - NEVER mark information as missing if it can be inferred from context
    - For Fixed Events:
-     * MUST flag missing: time, day, duration
-     * MUST flag missing course_code for academic events (exams, presentations) ONLY IF not found in input text
-     * Location is optional (do not flag as missing)
-   - For Preparation Tasks:
-     * MUST flag missing: duration_minutes
-     * MUST flag missing course_code ONLY IF parent event is missing course_code
-     * NEVER flag missing time (as it should always be null)
-     * Location is optional (do not flag as missing)
+     * Only flag as missing: time, day, or duration when not specified or inferable
+     * Flag course_code as missing ONLY for academic events (exams, classes) when not specified
+   
+5. Intelligent Course Code Recognition:
+   - Recognize course codes in various formats: CMPS###, EECE###, CS###, MATH###, etc.
+   - Only flag course code as missing for academic events if no code is found or inferred
 
-4. Priority and Linking Rules:
-   - Exam Rules:
-     * Both exam and its preparation task are high priority
-     * Both MUST have same course_code (either from input or both flagged as missing)
-     * Preparation task MUST have exam description as related_event
-   - Presentation Rules:
-     * Both presentation and its preparation task are high priority
-     * Both MUST have same course_code (either from input or both flagged as missing)
-     * Preparation task MUST have presentation description as related_event
+6. Consistency Enforcement:
+   - When multiple events are mentioned in sequence, maintain logical time ordering
+   - Parse dates correctly throughout the week, handling expressions like "next day", "following morning"
+   - SEQUENTIAL EVENT CONTEXT: For expressions like "I have [event1] on [day] at [time1] and [event2] at [time2]", both events MUST be assigned to the same day
 
-5. Course Code Extraction:
-   - MUST actively look for course codes in the input text
-   - Common formats: CMPS###, EECE###, etc.
-   - When found, assign to both the event and its preparation tasks
-   - Only flag as missing if no course code is found in the input text
+7. Multiple Event Processing:
+   - CRITICAL: When multiple events appear in the same sentence or paragraph, create distinct entries for each event
+   - When multiple events share a day reference (e.g., "On Monday, I have X, Y, and Z"), apply the day to ALL events
+   - When connectors like "and", "also", "then", "after that" link events, maintain context across ALL events
+   - For lists of events (e.g., "I have exams for EECE503, CMPS303, and MATH201 on Thursday"), create separate entries for each event while preserving the shared day and any other shared attributes
 
 Output a JSON object with this structure:
 {
     "tasks": [
         {
             "description": "task description",
-            "day": null,  # Always null for preparation tasks
+            "day": null or "day of week",
             "priority": "high/medium/low",
-            "time": null,  # Always null for preparation tasks
-            "duration_minutes": null,  # Must be specified or flagged as missing
-            "category": "preparation",  # Always preparation for event-related tasks
-            "is_fixed_time": false,  # Always false for preparation tasks
-            "location": null,  # Optional - do not flag as missing
-            "prerequisites": [],  # Optional list of prerequisite task descriptions
-            "course_code": "associated course code or null (required for academic tasks)",
-            "related_event": "MUST match an existing meeting description",
-            "missing_info": ["list of missing fields - NEVER include time or location"]
+            "time": null or "HH:MM",
+            "duration_minutes": null or minutes,
+            "category": "task category (preparation if specified)",
+            "is_fixed_time": true/false,
+            "location": null or "location",
+            "prerequisites": [],
+            "course_code": "associated course code or null",
+            "related_event": "related meeting description if explicitly specified",
+            "missing_info": ["list of missing fields"]
         }
     ],
     "meetings": [
@@ -77,67 +69,54 @@ Output a JSON object with this structure:
             "day": "day of week or null if missing",
             "priority": "high/medium/low",
             "time": "HH:MM or null if missing",
-            "duration_minutes": null,
+            "duration_minutes": null or minutes,
             "type": "exam/presentation/interview/project_deadline/regular",
-            "location": "meeting location or null",  # Optional - do not flag as missing
-            "preparation_tasks": ["MUST list all related prep task descriptions"],
+            "location": "meeting location or null",
+            "preparation_tasks": [],
             "course_code": "associated course code or null (required for academic events)",
-            "missing_info": ["MUST list missing required fields (excluding location)"]
+            "missing_info": ["list of missing required fields"]
         }
     ],
     "course_codes": ["list of unique course codes found"]
 }
 
 IMPORTANT VALIDATION RULES: 
-1. For exams:
-   - MUST create both exam event AND preparation task
-   - Preparation task MUST have time: null and is_fixed_time: false
-   - Both MUST have same course_code (from input or both flagged as missing)
-   - Both MUST be high priority
-   - Preparation task MUST link back to exam via related_event
+1. Strict Parsing:
+   - ONLY include events and tasks EXPLICITLY mentioned in the text
+   - NEVER create preparation tasks for exams unless they are specifically mentioned
+   - If the user doesn't mention a preparation task, don't create one
 
-2. For presentations:
-   - MUST create both presentation event AND preparation task
-   - Preparation task MUST have time: null and is_fixed_time: false
-   - Both MUST have same course_code (from input or both flagged as missing)
-   - Both MUST be high priority
-   - Preparation task MUST link back to presentation via related_event
+2. Data Consistency:
+   - If a duration is specified in text like "2-hour yoga", extract the value (120 minutes) correctly
+   - If a sequence is described ("after my exam"), properly order the events and carry over day information
+   - If a time property is mentioned ANYWHERE in text about an event, it should be extracted properly
+   
+3. Advanced Time Processing:
+   - Process relative time expressions: "after lunch", "in the evening", "before noon"
+   - Process duration expressions in various formats: "1 hour", "90 minutes", "2-hour", "an hour and a half"
+   - DAY CONTINUITY: Always assign events to the same day when they appear in a sequence like "I have an exam on Thursday at 1PM and another one at 5PM" - both are on Thursday
 
-3. General rules:
-   - Every task MUST have a related_event that matches a meeting description
-   - Every meeting MUST have corresponding tasks in the tasks array
-   - Course codes MUST be consistent between events and their tasks
-   - Preparation tasks MUST NEVER have specific times
-   - Location is optional and should never be flagged as missing
-   - Course codes MUST be extracted from input text when present
+4. Human-like Error Correction:
+   - Don't be overly literal - understand the intention behind messy natural language
+   - Carefully distinguish between different events even in complex, compound sentences
+   - Never create duplicate events from the same description
+   - If something is ambiguous, choose the most reasonable interpretation based on context
+   - MULTIPLE EVENTS, SAME DAY: When multiple events are mentioned with only one day specified, assume all events occur on that day unless explicitly stated otherwise
+
+5. MULTIPLE EVENT PATTERNS:
+   - For sequences like "I have X on Monday at 10AM, Y at 2PM, and Z at 4PM", create three separate events ALL on Monday
+   - For enumerations like "I have classes for EECE400, CMPS303, and PHYS201", create three separate meeting entries
+   - When events use shared attributes (time, day, type), apply those attributes to ALL relevant events
+   - Apply context across sentence boundaries when appropriate (e.g., "I have an exam on Monday. It's for EECE503")
+
+6. FINAL CHECK:
+   - Before returning your response, verify that:
+     * You've only included items explicitly mentioned in the text
+     * Course codes are correctly assigned when provided
+     * Multiple events mentioned together are correctly separated into individual entries
+     * Each event maintains proper context from surrounding text
+     * Days are properly inherited across related events mentioned in sequence
 
 Parse the input text completely and output only the JSON object.
 Text to parse: "{text}"
 """
-
-MODIFY_PROMPT = """You are a schedule modification assistant. Modify the existing schedule based on the user's request following these rules:
-
-1. Input Understanding:
-   - The user provides a modification request and the current schedule
-   - Modifications can include: adding events, removing events, changing times, etc.
-   - Maintain all existing valid events and tasks unless explicitly modified
-
-2. Modification Rules:
-   - For new events:
-     * Create both the event and any necessary preparation tasks
-     * Follow the same structure as the parsing prompt
-   - For removals:
-     * Remove the specified event and all its related tasks
-   - For time changes:
-     * Update the event time and adjust related tasks if needed
-
-3. Validation Rules:
-   - Maintain all required fields for events and tasks
-   - Keep consistent course codes across related items
-   - Preserve task-event relationships
-   - Ensure all modifications are complete and valid
-
-Modify the schedule based on the request and output the complete updated JSON object.
-Current schedule: {current_schedule}
-Modification request: {modification_request}
-""" 

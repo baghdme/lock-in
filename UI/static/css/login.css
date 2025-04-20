@@ -1,0 +1,255 @@
+/* UI/static/css/login.css */
+
+body {
+    background-color: #f5f7fa;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+}
+
+.container {
+    display: flex;
+    background: #ffffff;
+    max-width: 800px;
+    width: 90%;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 3px 20px rgba(0, 0, 0, 0.15);
+}
+
+.login-panel {
+    flex: 1;
+    padding: 3rem 2rem;
+    background: #ffffff;
+}
+
+.welcome-panel {
+    flex: 1;
+    padding: 3rem 2rem;
+    background: linear-gradient(135deg, #ff6b6b, #ff4757);
+    color: white;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+h2 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 1.5rem;
+    font-weight: 500;
+    font-size: 1.5rem;
+}
+
+.welcome-panel h2 {
+    color: white;
+    font-size: 2.2rem;
+    margin-bottom: 1rem;
+    font-weight: 600;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.welcome-panel h2 span {
+    display: block;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.welcome-panel p {
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 2rem;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    max-width: 90%;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Error message styling */
+.error-message {
+    background-color: rgba(255, 76, 76, 0.1);
+    border-left: 3px solid #ff4c4c;
+    color: #e41e1e;
+    padding: 12px 15px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    text-align: left;
+    animation: fadeInDown 0.3s ease-in-out;
+}
+
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Success message styling */
+.success-message {
+    background-color: rgba(75, 181, 67, 0.1);
+    border-left: 3px solid #4bb543;
+    color: #3c9a3c;
+    padding: 12px 15px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    text-align: left;
+    animation: fadeInDown 0.3s ease-in-out;
+}
+
+.social-icons {
+    display: flex;
+    justify-content: center;
+    margin: 1.5rem 0;
+}
+
+.social-icons a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: #f1f1f1;
+    color: #555;
+    margin: 0 0.5rem;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.social-icons a:hover {
+    background-color: #e1e1e1;
+}
+
+.divider {
+    display: flex;
+    align-items: center;
+    margin: 1.5rem 0;
+    font-size: 0.8rem;
+    color: #777;
+}
+
+.divider:before, .divider:after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: #eee;
+}
+
+.divider:before {
+    margin-right: 0.5rem;
+}
+
+.divider:after {
+    margin-left: 0.5rem;
+}
+
+form {
+    display: none;
+    flex-direction: column;
+}
+
+form.active {
+    display: flex;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+input[type="email"],
+input[type="password"],
+input[type="text"] {
+    width: 100%;
+    border: 1px solid #e1e4e8;
+    padding: 0.75rem 1rem;
+    border-radius: 20px;
+    margin-bottom: 1rem;
+    font-size: 0.95rem;
+    box-sizing: border-box;
+    outline: none;
+    background-color: #f7f9fc;
+}
+
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="text"]:focus {
+    border-color: #ff6b6b;
+    box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.1);
+}
+
+.forgot-password {
+    text-align: right;
+    font-size: 0.8rem;
+    margin-bottom: 1rem;
+}
+
+.forgot-password a {
+    color: #777;
+    text-decoration: none;
+}
+
+.forgot-password a:hover {
+    color: #ff6b6b;
+}
+
+button {
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+button[type="submit"] {
+    background-color: #ff6b6b;
+    color: white;
+    border: none;
+    padding: 0.75rem;
+    font-size: 0.95rem;
+    border-radius: 20px;
+    margin-top: 0.5rem;
+}
+
+button[type="submit"]:hover {
+    background-color: #ff5252;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(255, 107, 107, 0.2);
+}
+
+.toggle-btn {
+    background: none;
+    border: 1px solid white;
+    border-radius: 20px;
+    color: white;
+    padding: 0.75rem 2rem;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+}
+
+.toggle-btn:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+        max-width: 400px;
+    }
+    
+    .welcome-panel {
+        padding: 2rem;
+    }
+} 

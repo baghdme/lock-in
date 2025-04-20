@@ -1,4 +1,3 @@
-# Use Python 3.9 slim image
 FROM python:3.9-slim
 
 # Set working directory
@@ -9,13 +8,20 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create storage directory
+RUN mkdir -p /app/persistence
 RUN mkdir -p /app/storage
 
 # Copy the rest of the application
 COPY . .
 
-# Expose port
+# Set environment variables
+ENV FLASK_APP=app.py
+ENV FLASK_ENV=production
+ENV PYTHONUNBUFFERED=1
+ENV STORAGE_DIR=/app/storage
+
+# Expose port 5000
 EXPOSE 5000
 
-# Run the application
-CMD ["python", "scheduler.py"] 
+# Run the application using gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"] 
