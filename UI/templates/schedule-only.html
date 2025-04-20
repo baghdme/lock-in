@@ -28,6 +28,82 @@
     min-width: 320px;
     max-width: 400px;
   }
+  .header-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .schedule-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .btn {
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+    transition: background-color 0.2s;
+  }
+  .btn-primary {
+    background-color: #4285f4;
+    color: white;
+  }
+  .btn-primary:hover {
+    background-color: #3367d6;
+  }
+  .btn-secondary {
+    background-color: #f1f3f4;
+    color: #202124;
+  }
+  .btn-secondary:hover {
+    background-color: #e8eaed;
+  }
+  .reset-button {
+    background-color: #ea4335;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  .reset-button:hover {
+    background-color: #d33426;
+  }
+  .loading {
+    text-align: center;
+    padding: 30px;
+    font-size: 18px;
+    color: #4285f4;
+    background-color: rgba(66, 133, 244, 0.1);
+    border-radius: 8px;
+    margin: 20px 0;
+  }
+  .loading::after {
+    content: "";
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 3px solid #4285f4;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 1s linear infinite;
+    margin-left: 10px;
+    vertical-align: middle;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .error-message {
+    text-align: center;
+    padding: 20px;
+    color: #ea4335;
+    background-color: rgba(234, 67, 53, 0.1);
+    border-radius: 8px;
+    margin: 20px 0;
+  }
 </style>
 {% endblock %}
 
@@ -36,7 +112,11 @@
   <!-- Updated header section with improved design for schedule-only.html -->
   <div class="header-container">
     <h1>My Weekly Schedule</h1>
-    <button onclick="resetScheduleUI()" class="reset-button">Reset Schedule</button>
+    <div class="schedule-actions">
+      <a href="{{ url_for('preferences') }}" class="btn btn-secondary">Change Preferences</a>
+      <button onclick="regenerateSchedule()" class="btn btn-primary">Regenerate Schedule</button>
+      <button onclick="resetScheduleUI()" class="reset-button">Reset Schedule</button>
+    </div>
   </div>
   <div class="schedule-content">
     <div id="scheduleContainer" class="schedule-wrapper">
@@ -193,6 +273,59 @@
     
     // Scroll to bottom after user message
     chatLog.scrollTop = chatLog.scrollHeight;
+  }
+
+  function regenerateSchedule() {
+    // Show loading state
+    const scheduleOutput = document.getElementById('scheduleOutput');
+    scheduleOutput.innerHTML = '<div class="loading">Regenerating your schedule based on your preferences...</div>';
+    
+    // Call the regenerate endpoint
+    fetch('/regenerate-schedule', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(data => {
+          throw new Error(data.error || 'Failed to regenerate schedule');
+        });
+      }
+      return response.json();
+    })
+    .then(data => {
+      // Update the UI with the new schedule
+      localStorage.setItem('currentSchedule', JSON.stringify(data));
+      processSchedule(data);
+      
+      // Add message to chat log about successful regeneration
+      const chatLog = document.getElementById('chat-log');
+      const assistantContainer = document.createElement('div');
+      assistantContainer.className = 'message-container assistant-container';
+      const assistantMessage = document.createElement('div');
+      assistantMessage.className = 'message assistant';
+      assistantMessage.textContent = "I've regenerated your schedule based on your current preferences!";
+      assistantContainer.appendChild(assistantMessage);
+      chatLog.appendChild(assistantContainer);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    })
+    .catch(error => {
+      console.error('Error regenerating schedule:', error);
+      scheduleOutput.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
+      
+      // Add error message to chat log
+      const chatLog = document.getElementById('chat-log');
+      const assistantContainer = document.createElement('div');
+      assistantContainer.className = 'message-container assistant-container';
+      const assistantMessage = document.createElement('div');
+      assistantMessage.className = 'message assistant';
+      assistantMessage.textContent = `I couldn't regenerate your schedule: ${error.message}. Please try again later.`;
+      assistantContainer.appendChild(assistantMessage);
+      chatLog.appendChild(assistantContainer);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    });
   }
 </script>
 {% endblock %}

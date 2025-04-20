@@ -337,6 +337,9 @@ def construct_schedule_prompt():
                 'course_codes': data.get('course_codes', [])
             }
             
+        # Extract user preferences if provided
+        preferences = data.get('preferences', None)
+            
         # Check if we have both meetings and tasks
         if 'meetings' not in schedule_data or 'tasks' not in schedule_data:
             return jsonify({
@@ -358,7 +361,7 @@ def construct_schedule_prompt():
                 task['duration_minutes'] = 240 if priority in ['high', '1', 'urgent'] else 180
                 
         # Get the prompt from the schedule_prompts module
-        prompt = get_schedule_prompt(schedule_data)
+        prompt = get_schedule_prompt(schedule_data, preferences)
         
         return jsonify({
             'prompt': prompt,
@@ -498,6 +501,9 @@ def generate_optimized_schedule():
         else:
             schedule = data['schedule']
             
+        # Get user preferences if provided
+        preferences = data.get('preferences', None)
+            
         if not schedule:
             return jsonify({'error': 'No schedule found'}), 404
             
@@ -513,7 +519,7 @@ def generate_optimized_schedule():
         
         try:
             # Generate the prompt using our helper function
-            prompt = get_schedule_prompt(cleaned_schedule)
+            prompt = get_schedule_prompt(cleaned_schedule, preferences)
             
             # Call IEP2 to get the LLM response
             response = requests.post(
@@ -596,6 +602,10 @@ def generate_optimized_schedule():
                 'course_codes': cleaned_schedule.get('course_codes', []),
                 'generated_calendar': generated_calendar
             }
+            
+            # Include user preferences in the final schedule if available
+            if preferences:
+                final_schedule['preferences'] = preferences
             
             # Save the final schedule
             save_schedule(final_schedule, path=FINAL_PATH)

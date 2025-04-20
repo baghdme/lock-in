@@ -10,6 +10,7 @@ import uuid
 from functools import wraps
 import json
 from datetime import datetime, timedelta
+from preference_questions import PREFERENCE_QUESTIONS, get_default_preferences
 
 # Configure logging
 logging.basicConfig(
@@ -41,6 +42,10 @@ class User(db.Model):
     last_name = db.Column(db.String(64), nullable=False)
     latest_schedule = db.Column(db.Text, nullable=True)  # New column to store latest final_schedule.json
     schedule_timestamp = db.Column(db.DateTime, nullable=True)  # New column to store timestamp when schedule was updated
+    preferences = db.Column(db.Text, nullable=True)  # Store user preferences as JSON
+    preferences_completed = db.Column(db.Boolean, default=False)  # Flag to track if preferences have been completed
+    parsed_json = db.Column(db.Text, nullable=True)  # Store the complete parsed JSON after all missing info is filled
+    parsed_json_timestamp = db.Column(db.DateTime, nullable=True)  # When the parsed JSON was last updated
     
     def __repr__(self):
         return f'<User {self.email}>'
@@ -86,11 +91,24 @@ def require_login():
     # If user is not in session and the endpoint does not start with any allowed prefix, redirect to login
     if 'user' not in session and not any(request.endpoint.startswith(ep) for ep in allowed):
         return redirect(url_for('login'))
+    
+    # If preferences not completed, redirect to preferences page
+    # except for these endpoints that don't require completed preferences
+    exempt_endpoints = ['preferences', 'save_preferences', 'logout', 'static']
+    if 'user' in session and request.endpoint and not any(request.endpoint.startswith(ep) for ep in exempt_endpoints):
+        user = User.query.filter_by(email=session['user']).first()
+        if user and not user.preferences_completed:
+            return redirect(url_for('preferences'))
 
 @app.route('/')
 @login_required
 def index():
     user = User.query.filter_by(email=session['user']).first()
+    
+    # Redirect to preferences if not completed
+    if not user.preferences_completed:
+        return redirect(url_for('preferences'))
+        
     if user and user.latest_schedule and user.schedule_timestamp and (datetime.utcnow() - user.schedule_timestamp < timedelta(days=7)):
         return render_template('schedule-only.html')
     else:
@@ -146,6 +164,13 @@ def parse_schedule():
             if user:
                 user.latest_schedule = json.dumps(response_data['schedule'])
                 user.schedule_timestamp = datetime.utcnow()
+                
+                # If the schedule is complete (status is 'complete'), also save it as parsed_json
+                if response_data.get('status') == 'complete':
+                    user.parsed_json = json.dumps(response_data['schedule'])
+                    user.parsed_json_timestamp = datetime.utcnow()
+                    logger.info(f"Saved complete parsed JSON to user record for {user.email}")
+                
                 db.session.commit()
         else:
             logger.warning("No schedule in response data")
@@ -306,6 +331,13 @@ def answer_question():
             "questions": response_data.get('questions')
         }
         
+        # If no more questions, save the complete parsed JSON to the user's record
+        if ready_for_optimization and not has_more_questions and 'schedule' in response_data:
+            user.parsed_json = json.dumps(response_data['schedule'])
+            user.parsed_json_timestamp = datetime.utcnow()
+            db.session.commit()
+            logger.info(f"Saved parsed JSON to user record for {user.email}")
+        
         logger.info(f"Sending response to frontend with ready_for_optimization={ready_for_optimization}")
         return jsonify(frontend_response)
 
@@ -424,20 +456,56 @@ def generate_optimized_schedule():
         data = request.get_json()
         logger.info("Generating optimized schedule")
         
-        # Get the schedule from the request or use current_schedule
-        schedule = data.get('schedule', current_schedule)
+        # Check if this is a regeneration request
+        is_regeneration = data.get('regenerate', False)
+        
+        # Get the user record
+        user = User.query.filter_by(email=session['user']).first()
+        
+        # Determine which schedule data to use
+        schedule = None
+        
+        # If regeneration is requested and parsed_json exists, use that
+        if is_regeneration and user and user.parsed_json:
+            try:
+                schedule = json.loads(user.parsed_json)
+                logger.info("Using stored parsed JSON for schedule regeneration")
+            except json.JSONDecodeError:
+                logger.error(f"Error parsing stored JSON for user {user.email}")
+        
+        # Otherwise use schedule from request or current_schedule
+        if not schedule:
+            schedule = data.get('schedule', current_schedule)
+            logger.info("Using current schedule or schedule from request")
+        
         if not schedule:
             logger.error("No schedule available for optimization")
             return jsonify({"error": "No schedule available"}), 400
         
+        # Get user preferences to include in the optimization
+        user_preferences = None
+        if user and user.preferences:
+            try:
+                user_preferences = json.loads(user.preferences)
+                logger.info(f"Including user preferences in optimization request: {user_preferences}")
+            except json.JSONDecodeError:
+                logger.error(f"Error parsing user preferences JSON for user {user.email}")
+        
         # Call EEP1 to generate optimized schedule (it will call IEP2 internally)
         logger.info("Calling EEP1 to generate optimized schedule")
         
+        # Include preferences in the request to EEP1
+        request_data = {
+            'schedule': schedule
+        }
+        
+        # Add preferences if available
+        if user_preferences:
+            request_data['preferences'] = user_preferences
+        
         response = requests.post(
             f'{EEP1_URL}/generate-optimized-schedule',
-            json={
-                'schedule': schedule
-            },
+            json=request_data,
             timeout=30  # Longer timeout for schedule generation
         )
         
@@ -458,7 +526,6 @@ def generate_optimized_schedule():
         logger.info("Updated current schedule with optimized schedule")
         
         # Update user's record with the new schedule
-        user = User.query.filter_by(email=session['user']).first()
         if user:
             user.latest_schedule = json.dumps(response_data)
             user.schedule_timestamp = datetime.utcnow()
@@ -548,7 +615,8 @@ def register():
             email=email, 
             password=hashed_password,
             first_name=first_name,
-            last_name=last_name
+            last_name=last_name,
+            preferences_completed=False  # Default to preferences not completed
         )
         
         try:
@@ -558,7 +626,8 @@ def register():
             session['user'] = email
             session['first_name'] = first_name
             logger.info(f"User registered and logged in successfully: {email}")
-            return redirect(url_for('index'))
+            # Redirect to preferences page instead of index
+            return redirect(url_for('preferences'))
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error registering user: {str(e)}")
@@ -593,6 +662,99 @@ def reset_schedule():
     except Exception as e:
         logger.error(f"Error in reset schedule: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+# New routes for preferences handling
+@app.route('/preferences', methods=['GET', 'POST'])
+@login_required
+def preferences():
+    """Display and process user preferences form"""
+    user = User.query.filter_by(email=session['user']).first()
+    
+    # Handle form submission (POST request)
+    if request.method == 'POST':
+        preferences = {}
+        # Process each question from our defined questions list
+        for question in PREFERENCE_QUESTIONS:
+            if question['type'] == 'complex':
+                # Handle complex questions with subfields
+                preferences[question['id']] = {}
+                for subfield in question['subfields']:
+                    field_name = f"{question['id']}_{subfield['id']}"
+                    value = request.form.get(field_name)
+                    if value:
+                        preferences[question['id']][subfield['id']] = value
+            else:
+                # Handle simple questions
+                value = request.form.get(question['id'])
+                if value:
+                    preferences[question['id']] = value
+        
+        # Update user record
+        try:
+            user.preferences = json.dumps(preferences)
+            user.preferences_completed = True
+            db.session.commit()
+            logger.info(f"Preferences saved for user: {user.email}")
+            
+            # Redirect to the schedule page
+            return redirect(url_for('index'))
+        except Exception as e:
+            logger.error(f"Error saving preferences: {str(e)}")
+            return render_template(
+                'preferences.html', 
+                questions=PREFERENCE_QUESTIONS,
+                user_preferences=preferences,
+                error="Failed to save preferences. Please try again."
+            )
+    
+    # Display form (GET request)
+    user_preferences = None
+    if user.preferences:
+        try:
+            user_preferences = json.loads(user.preferences)
+        except json.JSONDecodeError:
+            logger.error(f"Error parsing user preferences JSON for user {user.email}")
+    
+    return render_template(
+        'preferences.html', 
+        questions=PREFERENCE_QUESTIONS,
+        user_preferences=user_preferences
+    )
+
+@app.route('/regenerate-schedule', methods=['POST'])
+@login_required
+def regenerate_schedule():
+    """Regenerate schedule based on stored parsed JSON and current preferences."""
+    try:
+        user = User.query.filter_by(email=session['user']).first()
+        
+        # Verify user has parsed JSON
+        if not user.parsed_json:
+            return jsonify({"error": "No parsed schedule data available for regeneration"}), 400
+            
+        # Call the generate_optimized_schedule endpoint with regenerate flag
+        response = requests.post(
+            f'{request.host_url.rstrip("/")}/generate-optimized-schedule',
+            json={'regenerate': True},
+            headers={'Content-Type': 'application/json'},
+            cookies=request.cookies,  # Pass cookies to maintain session
+            timeout=30
+        )
+        
+        if not response.ok:
+            error_msg = "Failed to regenerate schedule"
+            try:
+                error_data = response.json()
+                error_msg = error_data.get('error', error_msg)
+            except:
+                error_msg = response.text or error_msg
+            return jsonify({"error": error_msg}), response.status_code
+            
+        return response.json()
+        
+    except Exception as e:
+        logger.error(f"Error in regenerate_schedule: {str(e)}")
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5002, debug=True) 

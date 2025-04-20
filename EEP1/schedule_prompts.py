@@ -3,7 +3,7 @@ Schedule Generation Prompts and Helpers
 This module contains prompt templates and utility functions for LLM-based schedule generation.
 """
 
-def get_schedule_prompt(schedule_data):
+def get_schedule_prompt(schedule_data, preferences=None):
     """
     Create a detailed prompt for the LLM to generate an optimized schedule.
     
@@ -45,6 +45,91 @@ def get_schedule_prompt(schedule_data):
         task_str += f"  ID: {task.get('id', 'unknown')}\n\n"
         tasks_text += task_str
 
+    # Format user preferences for the prompt if provided
+    preferences_text = ""
+    if preferences:
+        preferences_text += "- Daily Schedule:\n"
+        if 'wake_time' in preferences:
+            preferences_text += f"  Wake-up time: {preferences['wake_time']}\n"
+        if 'sleep_time' in preferences:
+            preferences_text += f"  Sleep time: {preferences['sleep_time']}\n"
+        
+        if 'productivity_pattern' in preferences:
+            productivity_map = {
+                "morning": "Morning (6am-11am)",
+                "midday": "Midday (11am-3pm)",
+                "afternoon": "Afternoon (3pm-6pm)",
+                "evening": "Evening (6pm-10pm)",
+                "night": "Night (10pm-2am)"
+            }
+            pattern = productivity_map.get(preferences['productivity_pattern'], preferences['productivity_pattern'])
+            preferences_text += f"- Productivity: User is most productive during {pattern}\n"
+        
+        if 'break_preference' in preferences:
+            break_map = {
+                "short_frequent": "short frequent breaks (10-15 min every hour)",
+                "medium": "medium breaks (20-30 min every 2 hours)",
+                "long_infrequent": "longer infrequent breaks (45-60 min every 3-4 hours)"
+            }
+            break_pref = break_map.get(preferences['break_preference'], preferences['break_preference'])
+            preferences_text += f"- Break Preferences: User prefers {break_pref}\n"
+        
+        if 'study_session_length' in preferences:
+            session_map = {
+                "short": "short sessions (30-45 minutes)",
+                "medium": "medium sessions (1-1.5 hours)",
+                "long": "long sessions (2+ hours)"
+            }
+            session_pref = session_map.get(preferences['study_session_length'], preferences['study_session_length'])
+            preferences_text += f"- Study Session Length: User prefers {session_pref}\n"
+        
+        if 'weekend_scheduling' in preferences:
+            weekend_map = {
+                "no": "no tasks on weekends",
+                "light": "lighter workload on weekends",
+                "same": "same workload on weekends as weekdays"
+            }
+            weekend_pref = weekend_map.get(preferences['weekend_scheduling'], preferences['weekend_scheduling'])
+            preferences_text += f"- Weekend Scheduling: User prefers {weekend_pref}\n"
+        
+        if 'meal_times' in preferences:
+            preferences_text += "- Meal Times:\n"
+            meal_times = preferences['meal_times']
+            if isinstance(meal_times, dict):
+                if 'breakfast' in meal_times:
+                    preferences_text += f"  Breakfast: {meal_times['breakfast']}\n"
+                if 'lunch' in meal_times:
+                    preferences_text += f"  Lunch: {meal_times['lunch']}\n"
+                if 'dinner' in meal_times:
+                    preferences_text += f"  Dinner: {meal_times['dinner']}\n"
+        
+        if 'study_location_preference' in preferences:
+            location_map = {
+                "home": "at home",
+                "library": "in a library or quiet space",
+                "cafe": "in a cafe or social space",
+                "mixed": "in mixed environments"
+            }
+            location_pref = location_map.get(preferences['study_location_preference'], preferences['study_location_preference'])
+            preferences_text += f"- Study Location: User prefers to study {location_pref}\n"
+        
+        if 'focus_duration' in preferences:
+            focus_map = {
+                "short": "short periods (15-30 minutes)",
+                "medium": "medium periods (30-60 minutes)",
+                "long": "long periods (60+ minutes)"
+            }
+            focus_pref = focus_map.get(preferences['focus_duration'], preferences['focus_duration'])
+            preferences_text += f"- Focus Duration: User can maintain deep focus for {focus_pref}\n"
+        
+        if 'learning_style' in preferences:
+            style_map = {
+                "spaced": "spaced practice (spread out over time)",
+                "blocked": "blocked practice (concentrated sessions)",
+                "interleaved": "interleaved practice (mixing different subjects)"
+            }
+            style_pref = style_map.get(preferences['learning_style'], preferences['learning_style'])
+            preferences_text += f"- Learning Style: User prefers {style_pref}\n"
 
     # Build the complete prompt
     prompt = f"""You are an advanced AI scheduling assistant that optimizes weekly schedules. Your task is to generate a balanced, optimized schedule based on the meetings and tasks provided.
@@ -60,7 +145,9 @@ The following tasks need to be scheduled:
 {tasks_text if tasks_text else "No tasks to schedule."}
 
 # USER PREFERENCES
-These preferences should guide your scheduling decisions
+These preferences should guide your scheduling decisions:
+
+{preferences_text if preferences_text else "No specific preferences provided. Use general best practices for scheduling."}
 
 # SCHEDULING GUIDELINES
 1. Fixed meetings cannot be moved - schedule them exactly as specified.
@@ -70,6 +157,12 @@ These preferences should guide your scheduling decisions
 5. Allow appropriate breaks according to the user's break preference.
 6. If a task requires multiple sessions, try to schedule these on consecutive days when possible.
 7. Tasks labeled as "preparation" for an exam or presentation should be scheduled before the related event.
+8. Respect the user's sleep and wake times - don't schedule activities outside of these hours.
+9. Avoid scheduling important tasks during the user's meal times.
+10. Consider the user's preferred study session length when allocating time for tasks.
+11. If the user prefers not to work on weekends or prefers a lighter weekend load, adjust accordingly.
+12. Match the user's focus duration - schedule difficult tasks in chunks that match their ability to focus.
+13. Apply the user's learning style preference (spaced, blocked, or interleaved) when scheduling similar tasks.
 
 # OUTPUT FORMAT
 Your response must include a "generated_calendar" object that follows this structure exactly:
