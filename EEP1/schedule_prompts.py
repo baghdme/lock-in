@@ -3,13 +3,14 @@ Schedule Generation Prompts and Helpers
 This module contains prompt templates and utility functions for LLM-based schedule generation.
 """
 
-def get_schedule_prompt(schedule_data, preferences=None):
+def get_schedule_prompt(schedule_data, preferences=None, imported_calendar=None):
     """
     Create a detailed prompt for the LLM to generate an optimized schedule.
     
     Args:
         schedule_data: Dictionary containing meetings and tasks
         preferences: Dictionary containing user preferences
+        imported_calendar: Optional imported calendar to incorporate
         
     Returns:
         String prompt for the LLM
@@ -44,6 +45,22 @@ def get_schedule_prompt(schedule_data, preferences=None):
         task_str += f"  Related Event: {task.get('related_event', 'N/A')}\n"
         task_str += f"  ID: {task.get('id', 'unknown')}\n\n"
         tasks_text += task_str
+
+    # Format imported calendar if available
+    imported_calendar_text = ""
+    if imported_calendar:
+        imported_calendar_text = "# IMPORTED CALENDAR\nThe user has provided the following calendar that should be used as a starting point:\n\n"
+        for day, events in imported_calendar.items():
+            imported_calendar_text += f"{day}:\n"
+            for event in events:
+                imported_calendar_text += f"- {event.get('description', 'Untitled Event')}\n"
+                if 'start_time' in event and 'end_time' in event:
+                    imported_calendar_text += f"  Time: {event['start_time']} - {event['end_time']}\n"
+                imported_calendar_text += f"  Type: {event.get('type', 'unknown')}\n"
+                if 'course_code' in event:
+                    imported_calendar_text += f"  Course: {event['course_code']}\n"
+                imported_calendar_text += "\n"
+        imported_calendar_text += "Preserve as many events from this imported calendar as possible while integrating the meetings and tasks listed below.\n\n"
 
     # Format user preferences for the prompt if provided
     preferences_text = ""
@@ -134,6 +151,7 @@ def get_schedule_prompt(schedule_data, preferences=None):
     # Build the complete prompt
     prompt = f"""You are an advanced AI scheduling assistant that optimizes weekly schedules. Your task is to generate a balanced, optimized schedule based on the meetings and tasks provided.
 
+{imported_calendar_text}
 # FIXED MEETINGS
 The following meetings are fixed and must be included exactly as specified:
 
@@ -163,6 +181,7 @@ These preferences should guide your scheduling decisions:
 11. If the user prefers not to work on weekends or prefers a lighter weekend load, adjust accordingly.
 12. Match the user's focus duration - schedule difficult tasks in chunks that match their ability to focus.
 13. Apply the user's learning style preference (spaced, blocked, or interleaved) when scheduling similar tasks.
+14. If an imported calendar was provided, use it as a starting point and maintain as much of it as possible while accommodating the meetings and tasks.
 
 # OUTPUT FORMAT
 Your response must include a "generated_calendar" object that follows this structure exactly:

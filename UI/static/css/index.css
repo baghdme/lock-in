@@ -63,6 +63,12 @@ textarea:focus {
     box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.1);
 }
 
+.button-group {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
 button {
     background-color: #ff6b6b;
     color: white;
@@ -79,6 +85,16 @@ button:hover {
     background-color: #ff5252;
     transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(255, 107, 107, 0.2);
+}
+
+button.btn-secondary {
+    background-color: #5a6268;
+    color: white;
+}
+
+button.btn-secondary:hover {
+    background-color: #4a525a;
+    box-shadow: 0 5px 15px rgba(90, 98, 104, 0.2);
 }
 
 #scheduleOutput {
@@ -129,9 +145,11 @@ button:hover {
     padding: 2rem;
     border-radius: 10px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    max-width: 500px;
+    max-width: 600px;
     width: 90%;
     animation: fadeIn 0.3s ease-out;
+    max-height: 80vh;
+    overflow-y: auto;
 }
 
 @keyframes fadeIn {
@@ -146,6 +164,23 @@ button:hover {
     font-weight: 600;
 }
 
+.dialog-content p {
+    margin-bottom: 1rem;
+    color: #444;
+}
+
+.dialog-content pre {
+    background-color: #f6f8fa;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    overflow-x: auto;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid #e1e4e8;
+}
+
 #questionText {
     margin: 1.2rem 0;
     font-size: 1.1rem;
@@ -157,7 +192,7 @@ button:hover {
     margin: 1.2rem 0;
 }
 
-#questionInput input {
+#questionInput input, #importDialog input[type="file"] {
     width: 100%;
     padding: 0.8rem 1rem;
     font-size: 1rem;
@@ -165,9 +200,10 @@ button:hover {
     border-radius: 8px;
     background-color: #f7f9fc;
     outline: none;
+    margin-bottom: 1rem;
 }
 
-#questionInput input:focus {
+#questionInput input:focus, #importDialog input[type="file"]:focus {
     border-color: #ff6b6b;
     box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.1);
 }
@@ -201,24 +237,25 @@ button:hover {
 }
 
 /* Error and success messages */
-.error {
-    color: #e74c3c;
-    background-color: rgba(231, 76, 60, 0.1);
-    border-left: 3px solid #e74c3c;
-    padding: 12px 15px;
-    margin: 1rem 0;
-    border-radius: 4px;
-    font-size: 0.9rem;
+.error-message, .info-message {
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    font-size: 1rem;
+    text-align: center;
+    width: 100%;
 }
 
-.success {
-    color: #2ecc71;
-    background-color: rgba(46, 204, 113, 0.1);
-    border-left: 3px solid #2ecc71;
-    padding: 12px 15px;
-    margin: 1rem 0;
-    border-radius: 4px;
-    font-size: 0.9rem;
+.error-message {
+    color: #721c24;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+}
+
+.info-message {
+    color: #0c5460;
+    background-color: #d1ecf1;
+    border: 1px solid #bee5eb;
 }
 
 /* Responsive adjustments */
@@ -233,6 +270,10 @@ button:hover {
     
     h1 {
         font-size: 1.8rem;
+    }
+    
+    .button-group {
+        flex-direction: column;
     }
 }
 
