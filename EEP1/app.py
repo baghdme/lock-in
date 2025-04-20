@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 from copy import deepcopy
 import logging
 from prompts import PARSING_PROMPT
-from preference_questions import get_default_preferences
 from helpers import save_schedule, load_schedule, convert_to_24h, validate_and_fix_times, check_missing_info, clean_missing_info_from_tasks, clean_schedule, convert_answer_value, update_schedule_with_answers, ensure_ids, STORAGE_PATH, FINAL_PATH
 import uuid
 from schedule_prompts import get_schedule_prompt, get_response_parsing_prompt

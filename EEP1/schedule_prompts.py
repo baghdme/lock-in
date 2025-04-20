@@ -3,7 +3,7 @@ Schedule Generation Prompts and Helpers
 This module contains prompt templates and utility functions for LLM-based schedule generation.
 """
 
-def get_schedule_prompt(schedule_data, preferences):
+def get_schedule_prompt(schedule_data):
     """
     Create a detailed prompt for the LLM to generate an optimized schedule.
     
@@ -45,21 +45,6 @@ def get_schedule_prompt(schedule_data, preferences):
         task_str += f"  ID: {task.get('id', 'unknown')}\n\n"
         tasks_text += task_str
 
-    # Format preferences for prompt
-    work_start = preferences.get("work_start", "09:00")
-    work_end = preferences.get("work_end", "17:00")
-    include_weekend = preferences.get("include_weekend", False)
-    productivity_pattern = preferences.get("productivity_pattern", "morning")
-    break_preference = preferences.get("break_preference", "regular") 
-    preferred_session_length = preferences.get("preferred_session_length", 120)
-    
-    preferences_text = f"""
-Work Hours: {work_start} to {work_end}
-Include Weekend: {"Yes" if include_weekend else "No"}
-Productivity Pattern: {productivity_pattern}
-Break Preference: {break_preference}
-Preferred Session Length: {preferred_session_length} minutes
-"""
 
     # Build the complete prompt
     prompt = f"""You are an advanced AI scheduling assistant that optimizes weekly schedules. Your task is to generate a balanced, optimized schedule based on the meetings and tasks provided.
@@ -75,9 +60,7 @@ The following tasks need to be scheduled:
 {tasks_text if tasks_text else "No tasks to schedule."}
 
 # USER PREFERENCES
-These preferences should guide your scheduling decisions:
-
-{preferences_text}
+These preferences should guide your scheduling decisions
 
 # SCHEDULING GUIDELINES
 1. Fixed meetings cannot be moved - schedule them exactly as specified.
