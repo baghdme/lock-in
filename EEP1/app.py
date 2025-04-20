@@ -156,6 +156,11 @@ def answer_question():
         if not schedule:
             return jsonify({'error': 'No schedule found'}), 404
 
+        # DEBUG: Log the initial state of tasks
+        logger.info("INITIAL TASKS STATE:")
+        for task in schedule.get('tasks', []):
+            logger.info(f"Task: {task.get('description')}, course_code: {task.get('course_code')}, missing_info: {task.get('missing_info')}, related_event: {task.get('related_event')}")
+
         item_id = data.get('item_id')
         answer_type = data.get('type')
         answer_value = data.get('answer')
@@ -167,6 +172,8 @@ def answer_question():
         for item_list in [schedule.get('meetings', []), schedule.get('tasks', [])]:
             for item in item_list:
                 if item.get('id') == item_id:
+                    logger.info(f"Found item to update: {item.get('description')}, type: {'meeting' if item_list == schedule.get('meetings', []) else 'task'}")
+                    
                     if answer_type == 'time':
                         item['time'] = convert_to_24h(answer_value)
                     elif answer_type == 'duration':
@@ -175,7 +182,34 @@ def answer_question():
                         except ValueError:
                             return jsonify({'error': 'Invalid duration value'}), 400
                     elif answer_type == 'course_code':
+                        logger.info(f"Updating course_code for {item.get('description')} to {answer_value}")
                         item['course_code'] = answer_value
+                        
+                        # If this is a meeting with a course code, propagate to related tasks
+                        if item_list == schedule.get('meetings', []):
+                            meeting_description = item.get('description')
+                            logger.info(f"Looking for tasks related to meeting: {meeting_description}")
+                            # Find and update any tasks related to this meeting
+                            for task in schedule.get('tasks', []):
+                                # Use partial matching: if meeting description is contained within related_event
+                                # or if related_event is contained within meeting description
+                                task_related_event = task.get('related_event', '')
+                                if (meeting_description and task_related_event and 
+                                   (meeting_description in task_related_event or 
+                                    task_related_event in meeting_description)):
+                                    logger.info(f"Found related task: {task.get('description')}, missing_info before: {task.get('missing_info')}")
+                                    task['course_code'] = answer_value
+                                    # Also remove course_code from the task's missing_info array if present
+                                    if 'missing_info' in task and 'course_code' in task['missing_info']:
+                                        task['missing_info'].remove('course_code')
+                                        logger.info(f"Removed course_code from missing_info, now: {task.get('missing_info')}")
+                                        # If missing_info is now empty, remove it entirely
+                                        if not task['missing_info']:
+                                            del task['missing_info']
+                                            logger.info("Deleted empty missing_info array")
+                                    else:
+                                        logger.info(f"No course_code in missing_info or no missing_info field")
+                                    logger.info(f"Propagated course code {answer_value} to task {task.get('description')}")
 
                     field_map = {
                         'time': 'time',
@@ -184,6 +218,7 @@ def answer_question():
                     }
                     if field_map[answer_type] in item.get('missing_info', []):
                         item['missing_info'].remove(field_map[answer_type])
+                        logger.info(f"Removed {field_map[answer_type]} from missing_info of {item.get('description')}")
                     updated = True
                     break
             if updated:
@@ -192,10 +227,27 @@ def answer_question():
             return jsonify({'error': 'Item not found'}), 404
 
         save_schedule(schedule)
+        
+        # DEBUG: Log the state after updates
+        logger.info("TASKS STATE AFTER UPDATES:")
+        for task in schedule.get('tasks', []):
+            logger.info(f"Task: {task.get('description')}, course_code: {task.get('course_code')}, missing_info: {task.get('missing_info')}, related_event: {task.get('related_event')}")
+        
         questions = check_missing_info(schedule)
+        
+        # DEBUG: Log the questions generated
+        logger.info(f"Questions generated by check_missing_info: {questions}")
+        
         if not questions:
             schedule = clean_schedule(schedule)
             save_schedule(schedule)
+            logger.info("No questions remaining, schedule cleaned")
+        
+        # DEBUG: Log final state before returning
+        logger.info("FINAL TASKS STATE:")
+        for task in schedule.get('tasks', []):
+            logger.info(f"Task: {task.get('description')}, course_code: {task.get('course_code')}, missing_info: {task.get('missing_info')}")
+        
         return jsonify({
             'success': True,
             'has_more_questions': len(questions) > 0,

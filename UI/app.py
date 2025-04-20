@@ -61,15 +61,11 @@ CORS(app, resources={
 
 # Service URLs
 EEP1_URL = os.getenv('EEP1_URL', 'http://localhost:5000')
-IEP2_URL = os.getenv('IEP2_URL', 'http://localhost:5004')
-AUTH_SERVICE_URL = os.getenv('AUTH_SERVICE_URL', 'http://localhost:5004')
 
 # Add state management
 current_schedule = None
 
 logger.debug(f"Using EEP1_URL: {EEP1_URL}")
-logger.debug(f"Using IEP2_URL: {IEP2_URL}")
-logger.debug(f"Using AUTH_SERVICE_URL: {AUTH_SERVICE_URL}")
 
 def login_required(f):
     @wraps(f)
@@ -125,6 +121,12 @@ def parse_schedule():
         response_data = response.json()
         
         logger.info(f"Received response from EEP1: {response_data}")
+        
+        # Debug: Log questions from EEP1
+        if 'questions' in response_data:
+            logger.info(f"Questions from EEP1: {json.dumps(response_data['questions'])}")
+        else:
+            logger.info("No questions in EEP1 response")
         
         # Store the schedule
         if 'schedule' in response_data:
@@ -257,6 +259,18 @@ def answer_question():
             current_schedule = response_data['schedule']
             logger.debug(f"Updated current_schedule with response data")
 
+            # If the answer was for a course code for a meeting, propagate it to related tasks
+            if data.get('type') == 'course_code' and data.get('target_type') == 'meeting':
+                meeting_description = data.get('target')
+                course_code = data.get('answer')
+                
+                # Apply the course code to any preparation task related to this meeting
+                if meeting_description and course_code:
+                    for task in current_schedule.get('tasks', []):
+                        if task.get('related_event') == meeting_description and not task.get('course_code'):
+                            task['course_code'] = course_code
+                            logger.info(f"Propagated course code {course_code} to task {task.get('description')}")
+            
             # Store the updated schedule in EEP1
             try:
                 store_response = requests.post(f'{EEP1_URL}/store-schedule', json={'schedule': current_schedule}, timeout=10)
@@ -306,10 +320,40 @@ def answer_question():
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 def check_missing_info(schedule: dict) -> list:
-    """Check for missing information in the schedule and return questions if needed"""
     questions = []
     
-    # Check meetings
+    # Log the schedule structure for debugging
+    logger.info(f"Schedule structure - meetings: {len(schedule.get('meetings', []))}, tasks: {len(schedule.get('tasks', []))}")
+    for task in schedule.get('tasks', []):
+        logger.info(f"Task structure: {json.dumps(task)}")
+    
+    # Create mappings to track relationships and avoid redundant questions
+    meeting_ids_with_missing_course = set()  # Track meeting IDs missing course codes
+    meeting_descriptions = {}  # Map meeting IDs to descriptions
+    related_tasks = {}  # Map meeting descriptions to their related task IDs
+    
+    # First pass: collect all meetings and their properties
+    for meeting in schedule.get("meetings", []):
+        meeting_id = meeting.get("id")
+        description = meeting.get("description")
+        if meeting_id and description:
+            meeting_descriptions[meeting_id] = description
+        
+        # Track meetings missing course codes
+        if not meeting.get("course_code") and meeting.get("type") in ["exam", "presentation"]:
+            if meeting_id:
+                meeting_ids_with_missing_course.add(meeting_id)
+    
+    # Second pass: identify related tasks
+    for task in schedule.get("tasks", []):
+        related_event = task.get("related_event")
+        task_id = task.get("id")
+        if related_event and task_id:
+            if related_event not in related_tasks:
+                related_tasks[related_event] = []
+            related_tasks[related_event].append(task_id)
+    
+    # Now generate questions for meetings
     for meeting in schedule.get("meetings", []):
         if not meeting.get("time"):
             questions.append({
@@ -339,17 +383,35 @@ def check_missing_info(schedule: dict) -> list:
                 "target_id": meeting.get("id")
             })
     
-    # Check tasks - only ask for course code for preparation tasks
+    # Check tasks - only ask for course_code when not related to a meeting we're already asking about
     for task in schedule.get("tasks", []):
-        if not task.get("course_code") and task.get("type") in ["exam_preparation", "presentation_preparation"]:
-            questions.append({
-                "type": "course_code",
-                "question": f"What is the course code for the {task.get('description')}?",
-                "field": "course_code",
-                "target": task.get("description"),
-                "target_type": "task",
-                "target_id": task.get("id")
-            })
+        # Only process tasks that don't have a course code and are preparation tasks
+        if not task.get("course_code") and task.get("category") == "preparation":
+            related_event = task.get("related_event")
+            
+            # Skip if this task is related to a meeting we're already asking about
+            should_skip = False
+            for meeting in schedule.get("meetings", []):
+                # If the meeting description matches the related_event and we're already asking about it
+                if meeting.get("description") == related_event and meeting.get("id") in meeting_ids_with_missing_course:
+                    should_skip = True
+                    break
+            
+            # Only add the question if we shouldn't skip it
+            if not should_skip:
+                logger.info(f"Adding course code question for task: {task.get('description')}")
+            else:
+                logger.info(f"Skipping course code question for task: {task.get('description')} - related to meeting being queried")
+                
+            if not should_skip:
+                questions.append({
+                    "type": "course_code",
+                    "question": f"What is the course code for the {task.get('description')}?",
+                    "field": "course_code",
+                    "target": task.get("description"),
+                    "target_type": "task",
+                    "target_id": task.get("id")
+                })
     
     return questions
 
