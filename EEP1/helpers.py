@@ -320,95 +320,24 @@ def update_schedule_with_answers(schedule: dict, answers: list) -> dict:
                     logger.info(f"Updated task {task.get('description')} {field} to {value} by description")
                     found = True
     
-    # Second pass: handle propagation of course codes from meetings to related tasks
-    # and ensure preparation tasks exist for each exam
+    # Remove missing_info entries for fields that are now filled
+    for collection in ["meetings", "tasks"]:
+        for item in schedule.get(collection, []):
+            if "missing_info" in item:
+                for field in list(item.get("missing_info", [])):
+                    if field in item and item[field] is not None:
+                        item["missing_info"].remove(field)
+                if not item["missing_info"]:
+                    del item["missing_info"]
     
-    # Map meeting descriptions to their course codes
-    meeting_course_codes = {}
-    meeting_properties = {}  # Store all key properties by meeting description
+    # Update the course_codes array with any new course codes
+    course_codes = set(schedule.get("course_codes", []))
+    for collection in ["meetings", "tasks"]:
+        for item in schedule.get(collection, []):
+            if item.get("course_code"):
+                course_codes.add(item["course_code"])
     
-    for meeting in schedule.get("meetings", []):
-        desc = meeting.get("description")
-        if desc:
-            # Store important meeting properties
-            meeting_properties[desc] = {
-                "type": meeting.get("type"),
-                "course_code": meeting.get("course_code"),
-                "day": meeting.get("day"),
-                "time": meeting.get("time"),
-                "id": meeting.get("id")
-            }
-            
-            # Track course codes
-            if meeting.get("course_code"):
-                meeting_course_codes[desc] = meeting.get("course_code")
-    
-    # Find all exam events
-    exam_meetings = [m for m in schedule.get("meetings", []) 
-                    if m.get("type") == "exam" and 
-                    m.get("course_code") and 
-                    m.get("duration_minutes")]
-    
-    # Get existing preparation tasks
-    existing_prep_tasks = {t.get("related_event"): t for t in schedule.get("tasks", []) 
-                          if t.get("category") == "preparation" and t.get("related_event")}
-    
-    # Ensure every exam has a preparation task
-    for exam in exam_meetings:
-        exam_desc = exam.get("description")
-        
-        # Skip if a preparation task already exists for this exam
-        if exam_desc in existing_prep_tasks:
-            # If it exists, ensure it has the course code
-            prep_task = existing_prep_tasks[exam_desc]
-            if exam.get("course_code") and not prep_task.get("course_code"):
-                prep_task["course_code"] = exam.get("course_code")
-                logger.info(f"Updated existing prep task for {exam_desc} with course code {exam.get('course_code')}")
-                
-            # Remove from missing_info if needed
-            if "missing_info" in prep_task and "course_code" in prep_task.get("missing_info", []):
-                prep_task["missing_info"].remove("course_code")
-                if not prep_task["missing_info"]:
-                    del prep_task["missing_info"]
-        else:
-            # Create a new preparation task for this exam
-            prep_desc = f"Prepare for {exam_desc}"
-            new_prep_task = {
-                "id": str(uuid.uuid4()),
-                "description": prep_desc,
-                "day": None,
-                "priority": "high",
-                "time": None,
-                "duration_minutes": 120,  # Default 2 hours
-                "category": "preparation",
-                "is_fixed_time": False,
-                "location": None,
-                "prerequisites": [],
-                "course_code": exam.get("course_code"),
-                "related_event": exam_desc
-            }
-            
-            schedule["tasks"].append(new_prep_task)
-            logger.info(f"Created new preparation task for {exam_desc}")
-            
-            # Also add to the exam's preparation_tasks array
-            if "preparation_tasks" not in exam:
-                exam["preparation_tasks"] = []
-            if prep_desc not in exam["preparation_tasks"]:
-                exam["preparation_tasks"].append(prep_desc)
-    
-    # Apply course codes to related tasks
-    for task in schedule.get("tasks", []):
-        related_event = task.get("related_event")
-        if related_event and related_event in meeting_course_codes and not task.get("course_code"):
-            task["course_code"] = meeting_course_codes[related_event]
-            logger.info(f"Propagated course code {meeting_course_codes[related_event]} to task {task.get('description')}")
-            
-            # Remove from missing_info if needed
-            if "missing_info" in task and "course_code" in task.get("missing_info", []):
-                task["missing_info"].remove("course_code")
-                if not task["missing_info"]:
-                    del task["missing_info"]
+    schedule["course_codes"] = list(course_codes)
     
     return schedule
 
