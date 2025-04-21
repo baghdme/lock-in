@@ -371,62 +371,10 @@ function generateSchedule() {
     }, 1000);
 }
 
-// Functions for calendar import
-function showImportDialog() {
-    document.getElementById('importDialog').classList.remove('hidden');
-}
-
-function closeImportDialog() {
-    document.getElementById('importDialog').classList.add('hidden');
-    // Reset the file input
-    document.getElementById('calendarFile').value = '';
-}
-
-function uploadCalendar() {
-    const fileInput = document.getElementById('calendarFile');
-    if (!fileInput.files.length) {
-        alert('Please select a JSON file to upload');
-        return;
-    }
-    
-    // Create a FormData object to send the file
-    const formData = new FormData();
-    formData.append('calendar_file', fileInput.files[0]);
-    
-    // Disable the upload button
-    const uploadBtn = document.querySelector('#importDialog button[onclick="uploadCalendar()"]');
-    uploadBtn.disabled = true;
-    uploadBtn.innerText = 'Uploading...';
-    
-    // Send the file to the server
-    fetch('/import-calendar', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                throw new Error(data.error || 'Failed to import calendar');
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        alert(data.message || 'Calendar imported successfully');
-        closeImportDialog();
-        
-        // Remove automatic schedule generation - just show success message
-        document.getElementById('scheduleOutput').innerHTML = '<div class="info-message">Calendar imported successfully. Enter schedule details and process them, or start with a new schedule from scratch.</div>';
-    })
-    .catch(error => {
-        console.error('Error importing calendar:', error);
-        alert(`Error importing calendar: ${error.message}`);
-    })
-    .finally(() => {
-        // Re-enable the upload button
-        uploadBtn.disabled = false;
-        uploadBtn.innerText = 'Upload';
-    });
+// Function to handle Google Calendar import
+function importGoogleCalendar() {
+    // Redirect to the Google Calendar authorization route
+    window.location.href = '/google-calendar/authorize';
 }
 
 // Update generateOptimizedSchedule function

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from copy import deepcopy
 import logging
 from prompts import PARSING_PROMPT
-from helpers import save_schedule, load_schedule, convert_to_24h, validate_and_fix_times, check_missing_info, clean_missing_info_from_tasks, clean_schedule, convert_answer_value, update_schedule_with_answers, ensure_ids, STORAGE_PATH, FINAL_PATH, reset_schedules
+from helpers import save_schedule, load_schedule, convert_to_24h, validate_and_fix_times, check_missing_info, clean_missing_info_from_tasks, clean_schedule, convert_answer_value, update_schedule_with_answers, ensure_ids, reset_schedules
 import uuid
 from schedule_prompts import get_schedule_prompt, get_response_parsing_prompt
 
@@ -25,8 +25,10 @@ CORS(app)  # Enable CORS for all routes
 # Service URLs
 IEP1_URL = os.getenv('IEP1_URL', 'http://localhost:5001')
 IEP2_URL = os.getenv('IEP2_URL', 'http://localhost:5004')
+IEP3_URL = os.getenv('IEP3_URL', 'http://localhost:5003')
 logger.debug(f"Using IEP1_URL: {IEP1_URL}")
 logger.debug(f"Using IEP2_URL: {IEP2_URL}")
+logger.debug(f"Using IEP3_URL: {IEP3_URL}")
 
 # -------------------------------
 # Parsing and Storage Endpoints
@@ -127,7 +129,7 @@ def store_schedule_endpoint():
 @app.route('/get-schedule', methods=['GET'])
 def get_schedule():
     try:
-        schedule = load_schedule(FINAL_PATH)
+        schedule = load_schedule(is_final=True)
         if not schedule:
             return jsonify({'error': 'No schedule found'}), 404
             
@@ -483,7 +485,7 @@ def parse_schedule_llm_response():
         }
         
         # Save the final schedule
-        save_schedule(schedule_out, FINAL_PATH)
+        save_schedule(schedule_out, is_final=True)
         
         return jsonify(result)
         
@@ -504,7 +506,7 @@ def generate_optimized_schedule():
             
         schedule = data['schedule']
         preferences = data.get('preferences', None)
-        imported_calendar = data.get('imported_calendar', None)
+        google_calendar = data.get('google_calendar', None)
             
         # Validate the schedule
         questions = check_missing_info(schedule)
@@ -517,15 +519,15 @@ def generate_optimized_schedule():
         cleaned_schedule = clean_schedule(schedule)
         logger.info("Preparing to generate schedule...")
         
-        # Log whether we have an imported calendar
-        if imported_calendar:
-            logger.info("Using imported calendar from request")
+        # Log whether we have a Google Calendar
+        if google_calendar:
+            logger.info("Using Google Calendar data from request")
         else:
-            logger.info("No imported calendar provided in request")
+            logger.info("No Google Calendar data provided in request")
         
         try:
             # Generate the prompt using our helper function
-            prompt = get_schedule_prompt(cleaned_schedule, preferences, imported_calendar)
+            prompt = get_schedule_prompt(cleaned_schedule, preferences, google_calendar)
             
             # Call IEP2 to get the LLM response
             response = requests.post(
@@ -613,12 +615,12 @@ def generate_optimized_schedule():
             if preferences:
                 final_schedule['preferences'] = preferences
             
-            # Include a reference to the imported calendar if it was used
-            if imported_calendar:
-                final_schedule['used_imported_calendar'] = True
+            # Include a reference to the Google Calendar if it was used
+            if google_calendar:
+                final_schedule['used_google_calendar'] = True
             
             # Save the final schedule
-            save_schedule(final_schedule, path=FINAL_PATH)
+            save_schedule(final_schedule, is_final=True)
             
             return jsonify(final_schedule)
             
@@ -631,6 +633,85 @@ def generate_optimized_schedule():
         return jsonify({'error': str(e)}), 500
 
 # -------------------------------
+# Google Calendar Integration Endpoints
+# -------------------------------
+@app.route('/google-calendar/authorize', methods=['GET'])
+def google_calendar_authorize():
+    """Initiate Google Calendar authorization by redirecting to IEP3."""
+    try:
+        # Get redirect URI from request
+        redirect_uri = request.args.get('redirect_uri')
+        if not redirect_uri:
+            return jsonify({'error': 'Missing redirect_uri parameter'}), 400
+        
+        # Forward the request to IEP3
+        response = requests.get(
+            f"{IEP3_URL}/authorize",
+            params={'redirect_uri': redirect_uri},
+            timeout=10
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Error from IEP3: {response.text}")
+            return jsonify({'error': f'Error from IEP3: {response.text}'}), response.status_code
+        
+        # Return the authorization URL
+        return jsonify(response.json())
+    except Exception as e:
+        logger.error(f"Error in Google Calendar authorization: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/google-calendar/callback', methods=['POST'])
+def google_calendar_callback():
+    """Handle the OAuth callback and exchange the code for tokens."""
+    try:
+        data = request.get_json()
+        if not data or 'code' not in data:
+            return jsonify({'error': 'Code is required'}), 400
+        
+        # Forward the request to IEP3
+        response = requests.post(
+            f"{IEP3_URL}/callback",
+            json=data,
+            timeout=10
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Error from IEP3: {response.text}")
+            return jsonify({'error': f'Error from IEP3: {response.text}'}), response.status_code
+        
+        # Return the credentials
+        return jsonify(response.json())
+    except Exception as e:
+        logger.error(f"Error in Google Calendar callback: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/google-calendar/fetch', methods=['POST'])
+def google_calendar_fetch():
+    """Fetch the user's Google Calendar events."""
+    try:
+        data = request.get_json()
+        if not data or 'credentials' not in data:
+            return jsonify({'error': 'Credentials are required'}), 400
+        
+        # Forward the request to IEP3
+        response = requests.post(
+            f"{IEP3_URL}/fetch-calendar",
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Error from IEP3: {response.text}")
+            return jsonify({'error': f'Error from IEP3: {response.text}'}), response.status_code
+        
+        # Return the calendar data
+        return jsonify(response.json())
+    except Exception as e:
+        logger.error(f"Error fetching Google Calendar: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# -------------------------------
 # Health Endpoint
 # -------------------------------
 @app.route('/health', methods=['GET'])
@@ -638,12 +719,21 @@ def health():
     try:
         iep1_response = requests.get(f"{IEP1_URL}/health")
         iep1_status = iep1_response.status_code == 200
+        
+        # Check IEP3 health too
+        try:
+            iep3_response = requests.get(f"{IEP3_URL}/health")
+            iep3_status = iep3_response.status_code == 200
+        except:
+            iep3_status = False
+        
         return jsonify({
-            "status": "healthy" if iep1_status else "unhealthy",
+            "status": "healthy" if (iep1_status and iep3_status) else "partially healthy",
             "services": {
-                "iep1": "healthy" if iep1_status else "unhealthy"
+                "iep1": "healthy" if iep1_status else "unhealthy",
+                "iep3": "healthy" if iep3_status else "unhealthy"
             }
-        }), 200 if iep1_status else 500
+        }), 200 if (iep1_status and iep3_status) else 500
     except Exception as e:
         return jsonify({
             "status": "unhealthy",

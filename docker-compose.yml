@@ -1,64 +1,68 @@
-version: '3.8'
+version: '3'
 
 services:
   ui:
-    build:
-      context: ./UI
-      dockerfile: Dockerfile
+    build: ./UI
     ports:
       - "5002:5002"
     environment:
       - EEP1_URL=http://eep1:5000
     volumes:
-      - ./UI/instance:/app/instance
+      - ./UI:/app
     depends_on:
       - eep1
     networks:
       - app-network
 
   eep1:
-    build:
-      context: ./EEP1
-      dockerfile: Dockerfile
+    build: ./EEP1
     ports:
       - "5000:5000"
     environment:
       - IEP1_URL=http://iep1:5001
       - IEP2_URL=http://iep2:5004
-      - STORAGE_DIR=/app/storage
+      - IEP3_URL=http://iep3:5003
     volumes:
-      - eep1_storage:/app/storage
-      - eep1_persistence:/app/persistence
+      - ./EEP1:/app
     depends_on:
       - iep1
       - iep2
+      - iep3
     networks:
       - app-network
 
   iep1:
-    build:
-      context: ./IEP1
-      dockerfile: Dockerfile
+    build: ./IEP1
     ports:
       - "5001:5001"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_MODEL=gpt-4-1106-preview
     volumes:
-      - iep1_storage:/app/storage
+      - ./IEP1:/app
     networks:
       - app-network
 
   iep2:
-    build:
-      context: ./IEP2
-      dockerfile: Dockerfile
+    build: ./IEP2
     ports:
       - "5004:5004"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - LLM_MODEL=${LLM_MODEL:-claude-3-7-sonnet-20250219}
     volumes:
-      - iep2_storage:/app/storage
+      - ./IEP2:/app
+    networks:
+      - app-network
+
+  iep3:
+    build: ./IEP3
+    ports:
+      - "5003:5003"
+    environment:
+      - OAUTHLIB_INSECURE_TRANSPORT=1  # For development only
+    volumes:
+      - ./IEP3:/app
     networks:
       - app-network
 

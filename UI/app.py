@@ -46,8 +46,8 @@ class User(db.Model):
     preferences_completed = db.Column(db.Boolean, default=False)  # Flag to track if preferences have been completed
     parsed_json = db.Column(db.Text, nullable=True)  # Store the complete parsed JSON after all missing info is filled
     parsed_json_timestamp = db.Column(db.DateTime, nullable=True)  # When the parsed JSON was last updated
-    imported_calendar = db.Column(db.Text, nullable=True)  # Store the imported calendar JSON
-    imported_calendar_timestamp = db.Column(db.DateTime, nullable=True)  # When the calendar was imported
+    google_calendar = db.Column(db.Text, nullable=True)  # Store Google Calendar data
+    google_calendar_timestamp = db.Column(db.DateTime, nullable=True)  # When the Google Calendar was imported
     
     def __repr__(self):
         return f'<User {self.email}>'
@@ -493,14 +493,14 @@ def generate_optimized_schedule():
             except json.JSONDecodeError:
                 logger.error(f"Error parsing user preferences JSON for user {user.email}")
         
-        # Always load and include imported calendar if available
-        imported_calendar = None
-        if user and user.imported_calendar:
+        # Always load and include Google Calendar if available
+        google_calendar = None
+        if user and user.google_calendar:
             try:
-                imported_calendar = json.loads(user.imported_calendar)
-                logger.info(f"Including imported calendar in optimization request")
+                google_calendar = json.loads(user.google_calendar)
+                logger.info(f"Including Google Calendar data in optimization request")
             except json.JSONDecodeError:
-                logger.error(f"Error parsing imported calendar JSON for user {user.email}")
+                logger.error(f"Error parsing Google Calendar JSON for user {user.email}")
         
         # Call EEP1 to generate optimized schedule (it will call IEP2 internally)
         logger.info("Calling EEP1 to generate optimized schedule")
@@ -513,10 +513,10 @@ def generate_optimized_schedule():
         # Add preferences if available
         if user_preferences:
             request_data['preferences'] = user_preferences
-            
-        # Add imported calendar if available
-        if imported_calendar:
-            request_data['imported_calendar'] = imported_calendar
+        
+        # Add Google Calendar if available
+        if google_calendar:
+            request_data['google_calendar'] = google_calendar
         
         response = requests.post(
             f'{EEP1_URL}/generate-optimized-schedule',
@@ -746,93 +746,141 @@ def regenerate_schedule():
         # Verify user has parsed JSON
         if not user.parsed_json:
             return jsonify({"error": "No parsed schedule data available for regeneration"}), 400
-            
-        # Call the generate_optimized_schedule endpoint with regenerate flag
+        
+        # Call the optimized schedule endpoint with regenerate flag
         response = requests.post(
-            f'{request.host_url.rstrip("/")}/generate-optimized-schedule',
+            f"{EEP1_URL}/generate-optimized-schedule",
             json={'regenerate': True},
             headers={'Content-Type': 'application/json'},
-            cookies=request.cookies,  # Pass cookies to maintain session
             timeout=30
         )
         
-        if not response.ok:
-            error_msg = "Failed to regenerate schedule"
-            try:
-                error_data = response.json()
-                error_msg = error_data.get('error', error_msg)
-            except:
-                error_msg = response.text or error_msg
+        # Check if the request was successful
+        if response.status_code != 200:
+            error_data = response.json()
+            error_msg = error_data.get('error', 'Unknown error') 
+            logger.error(f"Error regenerating schedule: {error_msg}")
             return jsonify({"error": error_msg}), response.status_code
-            
+        
         return response.json()
         
     except Exception as e:
         logger.error(f"Error in regenerate_schedule: {str(e)}")
         return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
-@app.route('/import-calendar', methods=['POST'])
+# Google Calendar Integration Routes
+@app.route('/google-calendar/authorize', methods=['GET'])
 @login_required
-def import_calendar():
-    """
-    Handle the upload of a JSON-formatted calendar file.
-    Validates the format and stores it in the user's record.
-    """
+def google_calendar_authorize():
+    """Start the Google Calendar authorization flow."""
     try:
-        if 'calendar_file' not in request.files:
-            return jsonify({"error": "No file uploaded"}), 400
-            
-        calendar_file = request.files['calendar_file']
-        if calendar_file.filename == '':
-            return jsonify({"error": "No file selected"}), 400
-            
-        # Check if it's a JSON file
-        if not calendar_file.filename.endswith('.json'):
-            return jsonify({"error": "File must be in JSON format"}), 400
-            
-        # Read and parse the JSON file
-        try:
-            calendar_json = json.loads(calendar_file.read())
-        except json.JSONDecodeError:
-            return jsonify({"error": "Invalid JSON format"}), 400
-            
-        # Basic validation
-        if not isinstance(calendar_json, dict):
-            return jsonify({"error": "Calendar must be a JSON object"}), 400
-            
-        # Check if at least one day is present
-        valid_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        has_valid_day = any(day in calendar_json for day in valid_days)
-        if not has_valid_day:
-            return jsonify({"error": "Calendar must contain at least one valid day (Monday-Sunday)"}), 400
-            
-        # Get the current user
-        user = User.query.filter_by(email=session['user']).first()
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-            
-        # Save to the user database only
-        try:
-            # Save to user record
-            user.imported_calendar = json.dumps(calendar_json)
-            user.imported_calendar_timestamp = datetime.utcnow()
-            db.session.commit()
-            logger.info(f"Saved calendar to user record for {user.email}")
-                
-            # Return success
-            return jsonify({
-                "success": True,
-                "message": "Calendar imported and saved successfully",
-                "calendar_id": str(uuid.uuid4())
-            })
-            
-        except Exception as e:
-            logger.error(f"Error saving calendar: {str(e)}")
-            return jsonify({"error": f"Error saving calendar: {str(e)}"}), 500
-            
+        # Set the redirect URI to the callback route
+        redirect_uri = f"{request.url_root.rstrip('/')}/google-calendar/callback"
+        
+        # Call EEP1 to get the authorization URL
+        response = requests.get(
+            f"{EEP1_URL}/google-calendar/authorize", 
+            params={'redirect_uri': redirect_uri},
+            timeout=10
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Error getting authorization URL from EEP1: {response.text}")
+            return jsonify({"error": "Failed to initialize Google Calendar authorization"}), 500
+        
+        # Get the authorization URL from the response
+        data = response.json()
+        auth_url = data.get('url')
+        
+        if not auth_url:
+            logger.error("No authorization URL returned from EEP1")
+            return jsonify({"error": "Failed to get authorization URL"}), 500
+        
+        # Store the state in the session
+        session['google_auth_state'] = data.get('state')
+        
+        # Redirect the user to the authorization URL
+        return redirect(auth_url)
     except Exception as e:
-        logger.error(f"Error importing calendar: {str(e)}")
-        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+        logger.error(f"Error initiating Google Calendar authorization: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/google-calendar/callback', methods=['GET'])
+@login_required
+def google_calendar_callback():
+    """Handle the callback from Google OAuth."""
+    try:
+        # Get the authorization code from the request
+        code = request.args.get('code')
+        if not code:
+            logger.error("No authorization code in callback")
+            flash('Google Calendar authorization failed: No authorization code received.')
+            return redirect(url_for('index'))
+        
+        # Prepare the callback data
+        redirect_uri = f"{request.url_root.rstrip('/')}/google-calendar/callback"
+        callback_data = {
+            'code': code,
+            'redirect_uri': redirect_uri
+        }
+        
+        # Call EEP1 to exchange the code for tokens
+        response = requests.post(
+            f"{EEP1_URL}/google-calendar/callback",
+            json=callback_data,
+            timeout=10
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Error exchanging code for tokens: {response.text}")
+            flash('Google Calendar authorization failed. Please try again.')
+            return redirect(url_for('index'))
+        
+        # Get the credentials from the response
+        data = response.json()
+        credentials = data.get('credentials')
+        
+        if not credentials:
+            logger.error("No credentials in response from EEP1")
+            flash('Google Calendar authorization failed: No credentials received.')
+            return redirect(url_for('index'))
+        
+        # Use the credentials to fetch the user's calendar
+        fetch_response = requests.post(
+            f"{EEP1_URL}/google-calendar/fetch",
+            json={'credentials': credentials},
+            timeout=30
+        )
+        
+        if fetch_response.status_code != 200:
+            logger.error(f"Error fetching calendar data: {fetch_response.text}")
+            flash('Failed to fetch Google Calendar data.')
+            return redirect(url_for('index'))
+        
+        # Get the calendar data from the response
+        fetch_data = fetch_response.json()
+        google_calendar = fetch_data.get('google_calendar')
+        
+        if not google_calendar:
+            logger.error("No calendar data in response from EEP1")
+            flash('No calendar data received from Google Calendar.')
+            return redirect(url_for('index'))
+        
+        # Save the calendar data to the user's record
+        user = User.query.filter_by(email=session['user']).first()
+        user.google_calendar = json.dumps(google_calendar)
+        user.google_calendar_timestamp = datetime.utcnow()
+        db.session.commit()
+        
+        logger.info(f"Google Calendar data saved for user {user.email}")
+        flash('Google Calendar imported successfully!')
+        
+        # Redirect back to the index page
+        return redirect(url_for('index'))
+    except Exception as e:
+        logger.error(f"Error in Google Calendar callback: {str(e)}")
+        flash(f'Error importing Google Calendar: {str(e)}')
+        return redirect(url_for('index'))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5002, debug=True) 

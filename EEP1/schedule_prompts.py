@@ -3,14 +3,14 @@ Schedule Generation Prompts and Helpers
 This module contains prompt templates and utility functions for LLM-based schedule generation.
 """
 
-def get_schedule_prompt(schedule_data, preferences=None, imported_calendar=None):
+def get_schedule_prompt(schedule_data, preferences=None, google_calendar=None):
     """
     Create a detailed prompt for the LLM to generate an optimized schedule.
     
     Args:
         schedule_data: Dictionary containing meetings and tasks
         preferences: Dictionary containing user preferences
-        imported_calendar: Optional imported calendar to incorporate
+        google_calendar: Optional Google Calendar data to incorporate
         
     Returns:
         String prompt for the LLM
@@ -46,21 +46,21 @@ def get_schedule_prompt(schedule_data, preferences=None, imported_calendar=None)
         task_str += f"  ID: {task.get('id', 'unknown')}\n\n"
         tasks_text += task_str
 
-    # Format imported calendar if available
-    imported_calendar_text = ""
-    if imported_calendar:
-        imported_calendar_text = "# IMPORTED CALENDAR\nThe user has provided the following calendar that should be used as a starting point:\n\n"
-        for day, events in imported_calendar.items():
-            imported_calendar_text += f"{day}:\n"
-            for event in events:
-                imported_calendar_text += f"- {event.get('description', 'Untitled Event')}\n"
-                if 'start_time' in event and 'end_time' in event:
-                    imported_calendar_text += f"  Time: {event['start_time']} - {event['end_time']}\n"
-                imported_calendar_text += f"  Type: {event.get('type', 'unknown')}\n"
-                if 'course_code' in event:
-                    imported_calendar_text += f"  Course: {event['course_code']}\n"
-                imported_calendar_text += "\n"
-        imported_calendar_text += "Preserve as many events from this imported calendar as possible while integrating the meetings and tasks listed below.\n\n"
+    # Format Google Calendar events if available
+    google_calendar_text = ""
+    if google_calendar:
+        google_calendar_text = "# GOOGLE CALENDAR\nThe user has provided the following events from their Google Calendar that should be treated as fixed commitments:\n\n"
+        for day, events in google_calendar.items():
+            if events:  # Only include days with events
+                google_calendar_text += f"{day}:\n"
+                for event in events:
+                    google_calendar_text += f"- {event.get('description', 'Untitled Event')}\n"
+                    if 'start_time' in event and 'end_time' in event:
+                        google_calendar_text += f"  Time: {event['start_time']} - {event['end_time']}\n"
+                    if 'location' in event and event['location']:
+                        google_calendar_text += f"  Location: {event['location']}\n"
+                    google_calendar_text += "\n"
+        google_calendar_text += "These Google Calendar events are mandatory and must be respected when creating the schedule. Do not schedule any activities that would conflict with these events.\n\n"
 
     # Format user preferences for the prompt if provided
     preferences_text = ""
@@ -151,8 +151,7 @@ def get_schedule_prompt(schedule_data, preferences=None, imported_calendar=None)
     # Build the complete prompt
     prompt = f"""You are an advanced AI scheduling assistant that optimizes weekly schedules. Your task is to generate a balanced, optimized schedule based on the meetings and tasks provided.
 
-{imported_calendar_text}
-# FIXED MEETINGS
+{google_calendar_text}# FIXED MEETINGS
 The following meetings are fixed and must be included exactly as specified:
 
 {meetings_text if meetings_text else "No fixed meetings."}
@@ -169,19 +168,19 @@ These preferences should guide your scheduling decisions:
 
 # SCHEDULING GUIDELINES
 1. Fixed meetings cannot be moved - schedule them exactly as specified.
-2. Tasks should be scheduled based on priority, with higher priority tasks scheduled first.
-3. For exam preparation tasks, schedule them in multiple sessions across days leading up to the exam.
-4. Schedule challenging tasks during the user's peak productivity hours based on their productivity pattern.
-5. Allow appropriate breaks according to the user's break preference.
-6. If a task requires multiple sessions, try to schedule these on consecutive days when possible.
-7. Tasks labeled as "preparation" for an exam or presentation should be scheduled before the related event.
-8. Respect the user's sleep and wake times - don't schedule activities outside of these hours.
-9. Avoid scheduling important tasks during the user's meal times.
-10. Consider the user's preferred study session length when allocating time for tasks.
-11. If the user prefers not to work on weekends or prefers a lighter weekend load, adjust accordingly.
-12. Match the user's focus duration - schedule difficult tasks in chunks that match their ability to focus.
-13. Apply the user's learning style preference (spaced, blocked, or interleaved) when scheduling similar tasks.
-14. If an imported calendar was provided, use it as a starting point and maintain as much of it as possible while accommodating the meetings and tasks.
+2. Google Calendar events (if provided) are top priority and must be respected - do not schedule anything that conflicts with them.
+3. Tasks should be scheduled based on priority, with higher priority tasks scheduled first.
+4. For exam preparation tasks, schedule them in multiple sessions across days leading up to the exam.
+5. Schedule challenging tasks during the user's peak productivity hours based on their productivity pattern.
+6. Allow appropriate breaks according to the user's break preference.
+7. If a task requires multiple sessions, try to schedule these on consecutive days when possible.
+8. Tasks labeled as "preparation" for an exam or presentation should be scheduled before the related event.
+9. Respect the user's sleep and wake times - don't schedule activities outside of these hours.
+10. Avoid scheduling important tasks during the user's meal times.
+11. Consider the user's preferred study session length when allocating time for tasks.
+12. If the user prefers not to work on weekends or prefers a lighter weekend load, adjust accordingly.
+13. Match the user's focus duration - schedule difficult tasks in chunks that match their ability to focus.
+14. Apply the user's learning style preference (spaced, blocked, or interleaved) when scheduling similar tasks.
 
 # MEAL TIMES
 Always schedule regular meal times each day:
@@ -216,6 +215,7 @@ Times must be in 24-hour format (HH:MM).
 All existing meeting properties (id, type, description, etc.) must be preserved exactly.
 For tasks, include: id, type ("task"), description, course_code, duration, start_time, and end_time.
 For meals, use type "meal" and appropriate descriptions (e.g., "Breakfast", "Lunch", "Dinner").
+For Google Calendar events, use type "google_event" and preserve their original properties.
 
 # ADDITIONAL INSTRUCTIONS
 - Do not modify the input data - preserve all IDs and metadata.
