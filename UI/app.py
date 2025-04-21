@@ -660,9 +660,19 @@ def reset_schedule():
     try:
         user = User.query.filter_by(email=session['user']).first()
         if user:
+            # Reset the schedule data in the database
             user.latest_schedule = None
+            user.parsed_json = None
+            user.parsed_json_timestamp = None  # Also reset the timestamp
+            user.schedule_timestamp = None  # Reset the schedule timestamp too
+            
+            # Keep google_calendar and preferences intact
+            
+            # Commit the changes
             db.session.commit()
-            logger.info(f"Reset schedule for user: {user.email}")
+            logger.info(f"Reset schedule data for user: {user.email}")
+            
+        # Reset the global current_schedule
         global current_schedule
         current_schedule = None
 
@@ -673,7 +683,10 @@ def reset_schedule():
         else:
             logger.warning(f"Failed to reset stored schedule in EEP1: {response.text}")
 
-        return jsonify({"status": "reset done"})
+        return jsonify({
+            "status": "success", 
+            "message": "Schedule reset successful. Google Calendar data and preferences are still available."
+        })
     except Exception as e:
         logger.error(f"Error in reset schedule: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -747,10 +760,51 @@ def regenerate_schedule():
         if not user.parsed_json:
             return jsonify({"error": "No parsed schedule data available for regeneration"}), 400
         
-        # Call the optimized schedule endpoint with regenerate flag
+        # Load parsed JSON (schedule)
+        try:
+            schedule = json.loads(user.parsed_json)
+            logger.info("Loaded parsed JSON for schedule regeneration")
+        except json.JSONDecodeError:
+            logger.error(f"Error parsing stored JSON for user {user.email}")
+            return jsonify({"error": "Invalid stored schedule data"}), 400
+        
+        # Load user preferences
+        user_preferences = None
+        if user.preferences:
+            try:
+                user_preferences = json.loads(user.preferences)
+                logger.info("Including user preferences in regeneration request")
+            except json.JSONDecodeError:
+                logger.error(f"Error parsing user preferences JSON for user {user.email}")
+        
+        # Load Google Calendar data
+        google_calendar = None
+        if user.google_calendar:
+            try:
+                google_calendar = json.loads(user.google_calendar)
+                logger.info("Including Google Calendar data in regeneration request")
+            except json.JSONDecodeError:
+                logger.error(f"Error parsing Google Calendar JSON for user {user.email}")
+        
+        # Prepare request data
+        request_data = {
+            'schedule': schedule,
+            'regenerate': True
+        }
+        
+        # Add preferences if available
+        if user_preferences:
+            request_data['preferences'] = user_preferences
+        
+        # Add Google Calendar if available
+        if google_calendar:
+            request_data['google_calendar'] = google_calendar
+        
+        # Call EEP1 to generate the optimized schedule
+        logger.info(f"Sending regeneration request to EEP1 with data: {list(request_data.keys())}")
         response = requests.post(
             f"{EEP1_URL}/generate-optimized-schedule",
-            json={'regenerate': True},
+            json=request_data,
             headers={'Content-Type': 'application/json'},
             timeout=30
         )
@@ -762,7 +816,16 @@ def regenerate_schedule():
             logger.error(f"Error regenerating schedule: {error_msg}")
             return jsonify({"error": error_msg}), response.status_code
         
-        return response.json()
+        # Get the response data
+        response_data = response.json()
+        
+        # Update user's record with the new schedule
+        user.latest_schedule = json.dumps(response_data)
+        user.schedule_timestamp = datetime.utcnow()
+        db.session.commit()
+        logger.info("Updated user's schedule with regenerated schedule")
+        
+        return jsonify(response_data)
         
     except Exception as e:
         logger.error(f"Error in regenerate_schedule: {str(e)}")
