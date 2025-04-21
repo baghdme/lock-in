@@ -513,7 +513,7 @@ def generate_optimized_schedule():
         # Add preferences if available
         if user_preferences:
             request_data['preferences'] = user_preferences
-        
+            
         # Add Google Calendar if available
         if google_calendar:
             request_data['google_calendar'] = google_calendar
@@ -759,7 +759,7 @@ def regenerate_schedule():
         # Verify user has parsed JSON
         if not user.parsed_json:
             return jsonify({"error": "No parsed schedule data available for regeneration"}), 400
-        
+            
         # Load parsed JSON (schedule)
         try:
             schedule = json.loads(user.parsed_json)
@@ -815,7 +815,7 @@ def regenerate_schedule():
             error_msg = error_data.get('error', 'Unknown error') 
             logger.error(f"Error regenerating schedule: {error_msg}")
             return jsonify({"error": error_msg}), response.status_code
-        
+            
         # Get the response data
         response_data = response.json()
         
@@ -868,6 +868,84 @@ def google_calendar_authorize():
         logger.error(f"Error initiating Google Calendar authorization: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/google-calendar/export-to-google', methods=['POST'])
+@login_required
+def export_to_google_calendar():
+    """Export the user's schedule to Google Calendar."""
+    try:
+        user = User.query.filter_by(email=session['user']).first()
+        
+        # Check if we have a schedule to export
+        if not user.latest_schedule:
+            return jsonify({"error": "No schedule available to export to Google Calendar"}), 400
+        
+        # Check if we have Google credentials
+        credentials_data = None
+        if 'google_credentials' in session:
+            credentials_data = session['google_credentials']
+        
+        # If no credentials, the UI will redirect to authorization
+        if not credentials_data:
+            # Set the export flow flag so we know to resume the export after authorization
+            session['is_export_flow'] = True
+            return jsonify({"error": "Google Calendar authorization required", "needs_auth": True}), 401
+        
+        # Load the latest schedule
+        try:
+            schedule = json.loads(user.latest_schedule)
+        except json.JSONDecodeError:
+            logger.error(f"Error parsing schedule JSON for user {user.email}")
+            return jsonify({"error": "Invalid schedule data"}), 400
+        
+        # Load imported Google Calendar data if available
+        imported_events = None
+        if user.google_calendar:
+            try:
+                imported_events = json.loads(user.google_calendar)
+            except json.JSONDecodeError:
+                logger.error(f"Error parsing Google Calendar JSON for user {user.email}")
+        
+        # Call EEP1 to export the schedule
+        export_data = {
+            'credentials': credentials_data,
+            'schedule': schedule,
+            'skip_meals': False  # Optional: allow user to configure this
+        }
+        
+        # Add imported events if available
+        if imported_events:
+            export_data['imported_events'] = imported_events
+        
+        response = requests.post(
+            f"{EEP1_URL}/google-calendar/export-schedule",
+            json=export_data,
+            timeout=60  # Longer timeout for exporting many events
+        )
+        
+        if response.status_code != 200:
+            # Check if it's an authorization error
+            if response.status_code == 401:
+                # Clear credentials and redirect to authorization
+                session.pop('google_credentials', None)
+                # Set the export flow flag so we know to resume the export after authorization
+                session['is_export_flow'] = True
+                return jsonify({
+                    "error": "Google Calendar authorization required", 
+                    "needs_auth": True
+                }), 401
+            
+            error_data = response.json()
+            error_msg = error_data.get('error', 'Unknown error')
+            logger.error(f"Error exporting schedule to Google Calendar: {error_msg}")
+            return jsonify({"error": error_msg}), response.status_code
+        
+        # Return the response from EEP1
+        return jsonify(response.json())
+        
+    except Exception as e:
+        logger.error(f"Error in export_to_google_calendar: {str(e)}")
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+
 @app.route('/google-calendar/callback', methods=['GET'])
 @login_required
 def google_calendar_callback():
@@ -908,6 +986,9 @@ def google_calendar_callback():
             flash('Google Calendar authorization failed: No credentials received.')
             return redirect(url_for('index'))
         
+        # Store the credentials in the session for later use
+        session['google_credentials'] = credentials
+        
         # Use the credentials to fetch the user's calendar
         fetch_response = requests.post(
             f"{EEP1_URL}/google-calendar/fetch",
@@ -938,7 +1019,12 @@ def google_calendar_callback():
         logger.info(f"Google Calendar data saved for user {user.email}")
         flash('Google Calendar imported successfully!')
         
-        # Redirect back to the index page
+        # If the request was for export (check a flag in the session), redirect to schedule page
+        if session.get('is_export_flow'):
+            session.pop('is_export_flow', None)
+            return redirect(url_for('schedule_only'))
+        
+        # Otherwise redirect back to the index page
         return redirect(url_for('index'))
     except Exception as e:
         logger.error(f"Error in Google Calendar callback: {str(e)}")

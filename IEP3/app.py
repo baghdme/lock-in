@@ -32,8 +32,8 @@ CLIENT_CONFIG = {
     }
 }
 
-# Google API scopes
-SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
+# Google API scopes - updated to include write permissions
+SCOPES = ['https://www.googleapis.com/auth/calendar']  # Full access instead of just .readonly
 
 app = Flask(__name__)
 CORS(app)
@@ -91,6 +91,11 @@ def callback():
         redirect_uri = data.get('redirect_uri')
         if not redirect_uri:
             return jsonify({"error": "Missing redirect_uri parameter"}), 400
+        
+        # Import os to set environment variable
+        import os
+        # Set environment variable to disable scope validation
+        os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
         
         # Create a flow instance
         flow = google_auth_oauthlib.flow.Flow.from_client_config(
@@ -172,6 +177,68 @@ def fetch_calendar():
         logger.error(f"Error fetching calendar: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/create-events', methods=['POST'])
+def create_events():
+    """Create events in Google Calendar from the optimized schedule."""
+    try:
+        data = request.get_json()
+        if not data or 'credentials' not in data or 'events' not in data:
+            return jsonify({"error": "Both credentials and events are required"}), 400
+        
+        # Recreate the credentials object
+        credentials = google.oauth2.credentials.Credentials(
+            **data['credentials']
+        )
+        
+        # Build the Calendar API service
+        calendar_service = googleapiclient.discovery.build(
+            'calendar', 'v3', credentials=credentials
+        )
+        
+        events_to_create = data['events']
+        created_events = []
+        failed_events = []
+        
+        # Create each event individually
+        for event in events_to_create:
+            try:
+                # Format the event according to Google Calendar API requirements
+                google_event = format_event_for_google(event)
+                
+                # Insert the event
+                created_event = calendar_service.events().insert(
+                    calendarId='primary',
+                    body=google_event
+                ).execute()
+                
+                # Add to created events list
+                created_events.append({
+                    'id': created_event.get('id'),
+                    'original_id': event.get('id'),
+                    'description': event.get('description'),
+                    'status': 'created'
+                })
+                
+            except Exception as e:
+                # Log the error and continue with next event
+                logger.error(f"Error creating event '{event.get('description', 'Unknown')}': {str(e)}")
+                failed_events.append({
+                    'original_id': event.get('id'),
+                    'description': event.get('description'),
+                    'error': str(e)
+                })
+        
+        return jsonify({
+            "success": True,
+            "created": len(created_events),
+            "failed": len(failed_events),
+            "created_events": created_events,
+            "failed_events": failed_events
+        })
+    except Exception as e:
+        logger.error(f"Error creating events in Google Calendar: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 def process_google_events(events):
     """Process Google Calendar events into our application format."""
     days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -211,6 +278,47 @@ def process_google_events(events):
         processed_calendar[day_of_week].append(processed_event)
     
     return processed_calendar
+
+def format_event_for_google(event):
+    """Format an event from our application format to Google Calendar API format."""
+    # Get the date for the day of the week
+    day_name = event.get('day', 'Monday')
+    today = datetime.now()
+    days_ahead = {'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 
+                 'Thursday': 3, 'Friday': 4, 'Saturday': 5, 'Sunday': 6}
+    
+    # Calculate the next occurrence of this day
+    days_until_next = (days_ahead[day_name] - today.weekday()) % 7
+    if days_until_next == 0:  # If today is the day, use next week
+        days_until_next = 7
+    
+    event_date = (today + timedelta(days=days_until_next)).strftime('%Y-%m-%d')
+    
+    # Format start and end times
+    start_time = event.get('start_time', '09:00')
+    end_time = event.get('end_time', '10:00')
+    
+    # Format the event for Google Calendar
+    google_event = {
+        'summary': event.get('description', 'Scheduled Event'),
+        'location': event.get('location', ''),
+        'description': f"Event Type: {event.get('type', 'task')}\n" +
+                      (f"Course: {event.get('course_code')}\n" if event.get('course_code') else "") +
+                      f"Created by Lock-In Scheduler",
+        'start': {
+            'dateTime': f'{event_date}T{start_time}:00',
+            'timeZone': 'America/New_York',  # Default to Eastern Time
+        },
+        'end': {
+            'dateTime': f'{event_date}T{end_time}:00',
+            'timeZone': 'America/New_York',  # Default to Eastern Time
+        },
+        'reminders': {
+            'useDefault': True
+        }
+    }
+    
+    return google_event
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5003, debug=True) 

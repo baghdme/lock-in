@@ -711,6 +711,79 @@ def google_calendar_fetch():
         logger.error(f"Error fetching Google Calendar: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/google-calendar/export-schedule', methods=['POST'])
+def export_schedule_to_google():
+    """Export the optimized schedule to Google Calendar."""
+    try:
+        data = request.get_json()
+        if not data or 'credentials' not in data or 'schedule' not in data:
+            return jsonify({'error': 'Both Google credentials and schedule are required'}), 400
+        
+        schedule = data['schedule']
+        credentials = data['credentials']
+        
+        # Check if we have a valid schedule with a generated_calendar
+        if not schedule or 'generated_calendar' not in schedule:
+            return jsonify({'error': 'No valid schedule to export'}), 400
+        
+        # Get imported Google Calendar events if available
+        google_event_ids = set()
+        if 'imported_events' in data:
+            for day_events in data['imported_events'].values():
+                for event in day_events:
+                    if event.get('id'):
+                        google_event_ids.add(event.get('id'))
+        
+        # Process each day in the generated calendar
+        events_to_create = []
+        for day, day_events in schedule['generated_calendar'].items():
+            for event in day_events:
+                # Skip events that originated from Google Calendar
+                if event.get('type') == 'google_event' or event.get('id') in google_event_ids:
+                    logger.info(f"Skipping event from Google Calendar: {event.get('description')}")
+                    continue
+                
+                # Skip meal events if requested
+                if data.get('skip_meals', False) and event.get('type') == 'meal':
+                    logger.info(f"Skipping meal event: {event.get('description')}")
+                    continue
+                
+                # Add day information to the event
+                event_with_day = event.copy()
+                event_with_day['day'] = day
+                
+                # Add to list of events to create
+                events_to_create.append(event_with_day)
+        
+        # If no events to create, return early
+        if not events_to_create:
+            return jsonify({
+                'success': True,
+                'message': 'No new events to export to Google Calendar',
+                'created': 0
+            })
+        
+        # Send the events to IEP3 for creation
+        response = requests.post(
+            f"{IEP3_URL}/create-events",
+            json={
+                'credentials': credentials,
+                'events': events_to_create
+            },
+            timeout=60  # Longer timeout as creating multiple events can take time
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Error from IEP3 when creating events: {response.text}")
+            return jsonify({'error': f'Error creating events in Google Calendar: {response.text}'}), response.status_code
+        
+        # Return the response from IEP3
+        return jsonify(response.json())
+        
+    except Exception as e:
+        logger.error(f"Error exporting schedule to Google Calendar: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 # -------------------------------
 # Health Endpoint
 # -------------------------------

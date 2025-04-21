@@ -115,6 +115,7 @@
     <div class="schedule-actions">
       <a href="{{ url_for('preferences') }}" class="btn btn-secondary">Change Preferences</a>
       <button onclick="regenerateSchedule()" class="btn btn-primary">Regenerate Schedule</button>
+      <button onclick="exportToGoogleCalendar()" class="btn btn-primary" style="background-color: #0F9D58;">Export to Google Calendar</button>
       <button onclick="resetScheduleUI()" class="reset-button">Reset Schedule</button>
     </div>
   </div>
@@ -325,6 +326,91 @@
       assistantContainer.appendChild(assistantMessage);
       chatLog.appendChild(assistantContainer);
       chatLog.scrollTop = chatLog.scrollHeight;
+    });
+  }
+
+  function exportToGoogleCalendar() {
+    // Show loading state
+    const scheduleOutput = document.getElementById('scheduleOutput');
+    const originalContent = scheduleOutput.innerHTML;
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'loading';
+    loadingDiv.textContent = 'Exporting your schedule to Google Calendar...';
+    scheduleOutput.prepend(loadingDiv);
+    
+    // First, we need to authorize with Google if not already authorized
+    fetch('/google-calendar/export-to-google', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+    .then(response => {
+      // Remove loading state
+      if (loadingDiv.parentNode) {
+        loadingDiv.parentNode.removeChild(loadingDiv);
+      }
+      
+      if (!response.ok) {
+        return response.json().then(data => {
+          if (response.status === 401 && data.needs_auth) {
+            // Authorization required - redirect to Google OAuth flow
+            console.log('Google Calendar authorization required. Redirecting to authorization page...');
+            window.location.href = '/google-calendar/authorize';
+            // Throw a special error to halt further processing
+            throw new Error('AUTH_REDIRECT');
+          }
+          throw new Error(data.error || 'Failed to export schedule to Google Calendar');
+        });
+      }
+      return response.json();
+    })
+    .then(data => {
+      // Add message to chat log about successful export
+      const chatLog = document.getElementById('chat-log');
+      const assistantContainer = document.createElement('div');
+      assistantContainer.className = 'message-container assistant-container';
+      const assistantMessage = document.createElement('div');
+      assistantMessage.className = 'message assistant';
+      
+      if (data.created === 0) {
+        assistantMessage.textContent = "No new events were added to your Google Calendar. All events may already exist or be imported from Google Calendar.";
+      } else {
+        assistantMessage.textContent = `Successfully exported ${data.created} events to your Google Calendar!`;
+      }
+      
+      assistantContainer.appendChild(assistantMessage);
+      chatLog.appendChild(assistantContainer);
+      chatLog.scrollTop = chatLog.scrollHeight;
+      
+      // Alert the user about the successful export
+      if (data.created > 0) {
+        alert(`Successfully exported ${data.created} events to your Google Calendar!`);
+      } else {
+        alert('No new events were added to your Google Calendar.');
+      }
+    })
+    .catch(error => {
+      console.error('Error exporting to Google Calendar:', error);
+      
+      // Skip the rest of the error handling if we're redirecting for auth
+      if (error.message === 'AUTH_REDIRECT') {
+        return;
+      }
+      
+      // Add error message to chat log
+      const chatLog = document.getElementById('chat-log');
+      const assistantContainer = document.createElement('div');
+      assistantContainer.className = 'message-container assistant-container';
+      const assistantMessage = document.createElement('div');
+      assistantMessage.className = 'message assistant';
+      assistantMessage.textContent = `I couldn't export your schedule to Google Calendar: ${error.message}. Please try again later.`;
+      assistantContainer.appendChild(assistantMessage);
+      chatLog.appendChild(assistantContainer);
+      chatLog.scrollTop = chatLog.scrollHeight;
+      
+      // Alert the user about the error
+      alert(`Error exporting to Google Calendar: ${error.message}`);
     });
   }
 </script>
