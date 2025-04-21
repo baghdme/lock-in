@@ -25,7 +25,6 @@ services:
     environment:
       - IEP1_URL=http://iep1:5001
       - IEP2_URL=http://iep2:5004
-      - IEP3_URL=http://iep3:5005
       - STORAGE_DIR=/app/storage
     volumes:
       - eep1_storage:/app/storage
@@ -33,7 +32,6 @@ services:
     depends_on:
       - iep1
       - iep2
-      - iep3
     networks:
       - app-network
 
@@ -64,19 +62,6 @@ services:
     networks:
       - app-network
 
-  iep3:
-    build:
-      context: ./IEP3
-      dockerfile: Dockerfile
-    ports:
-      - "5005:5005"
-    environment:
-      - EEP1_URL=http://eep1:5000
-    volumes:
-      - iep3_storage:/app/storage
-    networks:
-      - app-network
-
 networks:
   app-network:
     driver: bridge
@@ -86,4 +71,3 @@ volumes:
   eep1_persistence:
   iep1_storage:
   iep2_storage:
-  iep3_storage:

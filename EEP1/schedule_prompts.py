@@ -183,6 +183,14 @@ These preferences should guide your scheduling decisions:
 13. Apply the user's learning style preference (spaced, blocked, or interleaved) when scheduling similar tasks.
 14. If an imported calendar was provided, use it as a starting point and maintain as much of it as possible while accommodating the meetings and tasks.
 
+# MEAL TIMES
+Always schedule regular meal times each day:
+1. Breakfast: Include a 30-minute breakfast slot (typically between 7:00-9:00)
+2. Lunch: Include a 60-minute lunch break (typically between 12:00-14:00)
+3. Dinner: Include a 60-minute dinner time (typically between 18:00-20:00)
+
+Use the user's preferred meal times if specified in their preferences, otherwise use reasonable default times. Treat these as fixed appointments that should not have conflicting tasks.
+
 # OUTPUT FORMAT
 Your response must include a "generated_calendar" object that follows this structure exactly:
 
@@ -207,6 +215,7 @@ Only include days from Monday to Friday unless weekend scheduling is requested.
 Times must be in 24-hour format (HH:MM).
 All existing meeting properties (id, type, description, etc.) must be preserved exactly.
 For tasks, include: id, type ("task"), description, course_code, duration, start_time, and end_time.
+For meals, use type "meal" and appropriate descriptions (e.g., "Breakfast", "Lunch", "Dinner").
 
 # ADDITIONAL INSTRUCTIONS
 - Do not modify the input data - preserve all IDs and metadata.

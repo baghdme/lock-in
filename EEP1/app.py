@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from copy import deepcopy
 import logging
 from prompts import PARSING_PROMPT
-from helpers import save_schedule, load_schedule, convert_to_24h, validate_and_fix_times, check_missing_info, clean_missing_info_from_tasks, clean_schedule, convert_answer_value, update_schedule_with_answers, ensure_ids, STORAGE_PATH, FINAL_PATH
+from helpers import save_schedule, load_schedule, convert_to_24h, validate_and_fix_times, check_missing_info, clean_missing_info_from_tasks, clean_schedule, convert_answer_value, update_schedule_with_answers, ensure_ids, STORAGE_PATH, FINAL_PATH, reset_schedules
 import uuid
 from schedule_prompts import get_schedule_prompt, get_response_parsing_prompt
 
@@ -25,10 +25,8 @@ CORS(app)  # Enable CORS for all routes
 # Service URLs
 IEP1_URL = os.getenv('IEP1_URL', 'http://localhost:5001')
 IEP2_URL = os.getenv('IEP2_URL', 'http://localhost:5004')
-IEP3_URL = os.getenv('IEP3_URL', 'http://localhost:5005')
 logger.debug(f"Using IEP1_URL: {IEP1_URL}")
 logger.debug(f"Using IEP2_URL: {IEP2_URL}")
-logger.debug(f"Using IEP3_URL: {IEP3_URL}")
 
 # -------------------------------
 # Parsing and Storage Endpoints
@@ -498,20 +496,17 @@ def generate_optimized_schedule():
     """Generate an optimized schedule using EEP1 service, which will call IEP2."""
     try:
         data = request.get_json()
-        if not data or 'schedule' not in data:
-            schedule = load_schedule()
-        else:
-            schedule = data['schedule']
-            
-        # Get user preferences if provided
-        preferences = data.get('preferences', None)
         
-        # Get imported calendar if provided in the request
+        # Get schedule and preferences directly from request
+        if not data or 'schedule' not in data:
+            logger.error("No schedule provided in request")
+            return jsonify({'error': 'No schedule provided in request. Data must come from UI.'}), 400
+            
+        schedule = data['schedule']
+        preferences = data.get('preferences', None)
         imported_calendar = data.get('imported_calendar', None)
             
-        if not schedule:
-            return jsonify({'error': 'No schedule found'}), 404
-            
+        # Validate the schedule
         questions = check_missing_info(schedule)
         if questions:
             return jsonify({
@@ -522,21 +517,14 @@ def generate_optimized_schedule():
         cleaned_schedule = clean_schedule(schedule)
         logger.info("Preparing to generate schedule...")
         
-        # If no imported calendar in the request, check if we have one stored
-        if not imported_calendar:
-            import_path = os.path.join(os.path.dirname(FINAL_PATH), 'imported_calendar.json')
-            if os.path.exists(import_path):
-                try:
-                    with open(import_path, 'r') as f:
-                        imported_calendar = json.load(f)
-                    logger.info("Loaded stored imported calendar to include in schedule generation")
-                except Exception as e:
-                    logger.warning(f"Could not load stored imported calendar: {str(e)}")
-        else:
+        # Log whether we have an imported calendar
+        if imported_calendar:
             logger.info("Using imported calendar from request")
+        else:
+            logger.info("No imported calendar provided in request")
         
         try:
-            # Generate the prompt using our helper function, including imported calendar if available
+            # Generate the prompt using our helper function
             prompt = get_schedule_prompt(cleaned_schedule, preferences, imported_calendar)
             
             # Call IEP2 to get the LLM response
@@ -667,130 +655,15 @@ def health():
 # -------------------------------
 @app.route('/reset-stored-schedule', methods=['POST'])
 def reset_stored_schedule():
-    import os
     try:
-        # Delete the final schedule file
-        if os.path.exists(FINAL_PATH):
-            os.remove(FINAL_PATH)
-            logger.info("Deleted final_schedule.json")
-        else:
-            logger.info("final_schedule.json not found")
-        
-        # Delete the latest schedule file (assuming it's in the same directory)
-        latest_path = os.path.join(os.path.dirname(FINAL_PATH), 'latest_schedule.json')
-        if os.path.exists(latest_path):
-            os.remove(latest_path)
-            logger.info("Deleted latest_schedule.json")
-        else:
-            logger.info("latest_schedule.json not found")
+        # Use the new in-memory reset function
+        reset_schedules()
+        logger.info("Reset all in-memory schedules")
         
         return jsonify({"status": "stored schedule reset"}), 200
     except Exception as e:
         logger.error("Error resetting stored schedule:", exc_info=True)
         return jsonify({"error": str(e)}), 500
-
-# -------------------------------
-# Imported Calendar Handling Endpoint
-# -------------------------------
-@app.route('/handle-imported-calendar', methods=['POST'])
-def handle_imported_calendar():
-    """
-    Handle an imported calendar from the UI.
-    This endpoint forwards the calendar to IEP3 for processing, then stores it for later use in schedule generation.
-    """
-    try:
-        data = request.get_json()
-        if not data or 'calendar' not in data:
-            return jsonify({'error': 'No calendar data provided'}), 400
-            
-        # Extract the calendar
-        imported_calendar = data['calendar']
-        metadata = data.get('metadata', {})
-        logger.info("Received imported calendar")
-        
-        # Basic validation
-        if not isinstance(imported_calendar, dict):
-            return jsonify({'error': 'Calendar must be a JSON object'}), 400
-            
-        # Forward to IEP3 for processing
-        try:
-            iep3_response = requests.post(
-                f"{IEP3_URL}/process-calendar",
-                json={
-                    'calendar': imported_calendar,
-                    'metadata': metadata
-                },
-                timeout=30
-            )
-            
-            if not iep3_response.ok:
-                error_msg = "Error from IEP3"
-                try:
-                    error_data = iep3_response.json()
-                    error_msg = error_data.get('error', error_msg)
-                except:
-                    error_msg = iep3_response.text or error_msg
-                logger.error(f"IEP3 error: {error_msg}")
-                return jsonify({'error': error_msg}), iep3_response.status_code
-                
-            # Return success response with data from IEP3
-            return jsonify({
-                'status': 'success',
-                'message': 'Calendar imported and processed successfully',
-                'calendar_id': str(uuid.uuid4()),  # Generate a unique ID for the calendar
-                'processing_results': iep3_response.json()
-            })
-            
-        except requests.RequestException as e:
-            logger.error(f"Error communicating with IEP3: {str(e)}")
-            return jsonify({'error': f'Error communicating with IEP3: {str(e)}'}), 500
-        
-    except Exception as e:
-        logger.error(f"Error handling imported calendar: {str(e)}")
-        return jsonify({'error': f'Error handling imported calendar: {str(e)}'}), 500
-
-@app.route('/store-imported-calendar', methods=['POST'])
-def store_imported_calendar():
-    """
-    Store an imported calendar that has already been validated by IEP3.
-    This endpoint is called by IEP3 and doesn't create a circular dependency.
-    """
-    try:
-        data = request.get_json()
-        if not data or 'calendar' not in data:
-            return jsonify({'error': 'No calendar data provided'}), 400
-            
-        # Extract the calendar and metadata
-        imported_calendar = data['calendar']
-        source = data.get('source', 'unknown')
-        metadata = data.get('metadata', {})
-        
-        logger.info(f"Storing imported calendar from source: {source}")
-        
-        # Store the imported calendar in a file for later use
-        import_path = os.path.join(os.path.dirname(FINAL_PATH), 'imported_calendar.json')
-        
-        # Make sure the storage directory exists
-        os.makedirs(os.path.dirname(import_path), exist_ok=True)
-        
-        try:
-            with open(import_path, 'w') as f:
-                json.dump(imported_calendar, f)
-            logger.info(f"Saved imported calendar to {import_path}")
-        except Exception as e:
-            logger.error(f"Error saving imported calendar: {str(e)}")
-            return jsonify({'error': f'Error saving imported calendar: {str(e)}'}), 500
-            
-        # Return success immediately without any additional processing
-        return jsonify({
-            'status': 'success',
-            'message': 'Calendar stored successfully',
-            'calendar_id': str(uuid.uuid4())  # Generate a unique ID for the calendar
-        })
-        
-    except Exception as e:
-        logger.error(f"Error storing imported calendar: {str(e)}")
-        return jsonify({'error': f'Error storing imported calendar: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True) 

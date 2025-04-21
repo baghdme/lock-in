@@ -484,16 +484,16 @@ def generate_optimized_schedule():
             logger.error("No schedule available for optimization")
             return jsonify({"error": "No schedule available"}), 400
         
-        # Get user preferences to include in the optimization
+        # Always load and include user preferences
         user_preferences = None
         if user and user.preferences:
             try:
                 user_preferences = json.loads(user.preferences)
-                logger.info(f"Including user preferences in optimization request: {user_preferences}")
+                logger.info(f"Including user preferences in optimization request")
             except json.JSONDecodeError:
                 logger.error(f"Error parsing user preferences JSON for user {user.email}")
         
-        # Get imported calendar if available
+        # Always load and include imported calendar if available
         imported_calendar = None
         if user and user.imported_calendar:
             try:
@@ -505,7 +505,7 @@ def generate_optimized_schedule():
         # Call EEP1 to generate optimized schedule (it will call IEP2 internally)
         logger.info("Calling EEP1 to generate optimized schedule")
         
-        # Include preferences and imported calendar in the request to EEP1
+        # Always include all available data in the request
         request_data = {
             'schedule': schedule
         }
@@ -811,7 +811,7 @@ def import_calendar():
         if not user:
             return jsonify({"error": "User not found"}), 404
             
-        # Just save directly to the database, no EEP1 or IEP3 interaction
+        # Save to the user database only
         try:
             # Save to user record
             user.imported_calendar = json.dumps(calendar_json)
