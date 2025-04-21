@@ -747,10 +747,44 @@ def regenerate_schedule():
         if not user.parsed_json:
             return jsonify({"error": "No parsed schedule data available for regeneration"}), 400
         
-        # Call the optimized schedule endpoint with regenerate flag
+        # Load schedule data from parsed_json
+        try:
+            schedule = json.loads(user.parsed_json)
+            logger.info(f"Loaded parsed schedule data for regeneration")
+        except json.JSONDecodeError:
+            logger.error(f"Error parsing stored JSON for user {user.email}")
+            return jsonify({"error": "Invalid schedule data format"}), 500
+        
+        # Build the complete request data with schedule, preferences, and google_calendar
+        request_data = {
+            'schedule': schedule,
+            'regenerate': True
+        }
+        
+        # Add preferences if available
+        if user.preferences:
+            try:
+                preferences = json.loads(user.preferences)
+                request_data['preferences'] = preferences
+                logger.info(f"Including user preferences in regeneration request")
+            except json.JSONDecodeError:
+                logger.error(f"Error parsing user preferences JSON for user {user.email}")
+        
+        # Add Google Calendar if available
+        if user.google_calendar:
+            try:
+                google_calendar = json.loads(user.google_calendar)
+                request_data['google_calendar'] = google_calendar
+                logger.info(f"Including Google Calendar data in regeneration request")
+            except json.JSONDecodeError:
+                logger.error(f"Error parsing Google Calendar JSON for user {user.email}")
+        
+        logger.info(f"Sending regeneration request to EEP1 with data: {list(request_data.keys())}")
+        
+        # Call the optimized schedule endpoint with all necessary data
         response = requests.post(
             f"{EEP1_URL}/generate-optimized-schedule",
-            json={'regenerate': True},
+            json=request_data,
             headers={'Content-Type': 'application/json'},
             timeout=30
         )
@@ -762,7 +796,14 @@ def regenerate_schedule():
             logger.error(f"Error regenerating schedule: {error_msg}")
             return jsonify({"error": error_msg}), response.status_code
         
-        return response.json()
+        # Update user's latest_schedule with the regenerated schedule
+        response_data = response.json()
+        user.latest_schedule = json.dumps(response_data)
+        user.schedule_timestamp = datetime.utcnow()
+        db.session.commit()
+        logger.info(f"Updated user's latest_schedule with regenerated schedule")
+        
+        return jsonify(response_data)
         
     except Exception as e:
         logger.error(f"Error in regenerate_schedule: {str(e)}")
