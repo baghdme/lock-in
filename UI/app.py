@@ -46,6 +46,8 @@ class User(db.Model):
     preferences_completed = db.Column(db.Boolean, default=False)  # Flag to track if preferences have been completed
     parsed_json = db.Column(db.Text, nullable=True)  # Store the complete parsed JSON after all missing info is filled
     parsed_json_timestamp = db.Column(db.DateTime, nullable=True)  # When the parsed JSON was last updated
+    imported_calendar = db.Column(db.Text, nullable=True)  # Store the imported calendar JSON
+    imported_calendar_timestamp = db.Column(db.DateTime, nullable=True)  # When the calendar was imported
     
     def __repr__(self):
         return f'<User {self.email}>'
@@ -491,10 +493,19 @@ def generate_optimized_schedule():
             except json.JSONDecodeError:
                 logger.error(f"Error parsing user preferences JSON for user {user.email}")
         
+        # Get imported calendar if available
+        imported_calendar = None
+        if user and user.imported_calendar:
+            try:
+                imported_calendar = json.loads(user.imported_calendar)
+                logger.info(f"Including imported calendar in optimization request")
+            except json.JSONDecodeError:
+                logger.error(f"Error parsing imported calendar JSON for user {user.email}")
+        
         # Call EEP1 to generate optimized schedule (it will call IEP2 internally)
         logger.info("Calling EEP1 to generate optimized schedule")
         
-        # Include preferences in the request to EEP1
+        # Include preferences and imported calendar in the request to EEP1
         request_data = {
             'schedule': schedule
         }
@@ -502,6 +513,10 @@ def generate_optimized_schedule():
         # Add preferences if available
         if user_preferences:
             request_data['preferences'] = user_preferences
+            
+        # Add imported calendar if available
+        if imported_calendar:
+            request_data['imported_calendar'] = imported_calendar
         
         response = requests.post(
             f'{EEP1_URL}/generate-optimized-schedule',
@@ -754,6 +769,69 @@ def regenerate_schedule():
         
     except Exception as e:
         logger.error(f"Error in regenerate_schedule: {str(e)}")
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+
+@app.route('/import-calendar', methods=['POST'])
+@login_required
+def import_calendar():
+    """
+    Handle the upload of a JSON-formatted calendar file.
+    Validates the format and stores it in the user's record.
+    """
+    try:
+        if 'calendar_file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+            
+        calendar_file = request.files['calendar_file']
+        if calendar_file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+            
+        # Check if it's a JSON file
+        if not calendar_file.filename.endswith('.json'):
+            return jsonify({"error": "File must be in JSON format"}), 400
+            
+        # Read and parse the JSON file
+        try:
+            calendar_json = json.loads(calendar_file.read())
+        except json.JSONDecodeError:
+            return jsonify({"error": "Invalid JSON format"}), 400
+            
+        # Basic validation
+        if not isinstance(calendar_json, dict):
+            return jsonify({"error": "Calendar must be a JSON object"}), 400
+            
+        # Check if at least one day is present
+        valid_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        has_valid_day = any(day in calendar_json for day in valid_days)
+        if not has_valid_day:
+            return jsonify({"error": "Calendar must contain at least one valid day (Monday-Sunday)"}), 400
+            
+        # Get the current user
+        user = User.query.filter_by(email=session['user']).first()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+            
+        # Just save directly to the database, no EEP1 or IEP3 interaction
+        try:
+            # Save to user record
+            user.imported_calendar = json.dumps(calendar_json)
+            user.imported_calendar_timestamp = datetime.utcnow()
+            db.session.commit()
+            logger.info(f"Saved calendar to user record for {user.email}")
+                
+            # Return success
+            return jsonify({
+                "success": True,
+                "message": "Calendar imported and saved successfully",
+                "calendar_id": str(uuid.uuid4())
+            })
+            
+        except Exception as e:
+            logger.error(f"Error saving calendar: {str(e)}")
+            return jsonify({"error": f"Error saving calendar: {str(e)}"}), 500
+            
+    except Exception as e:
+        logger.error(f"Error importing calendar: {str(e)}")
         return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 if __name__ == '__main__':
