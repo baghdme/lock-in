@@ -9,9 +9,13 @@ import logging
 # ===============================
 # (Ensure that all import statements and constant definitions are below this header)
 
-# Define storage paths
+# Define storage paths - keeping these for backward compatibility
 STORAGE_PATH = os.path.join(os.path.dirname(__file__), 'storage', 'latest_schedule.json')
 FINAL_PATH = os.path.join(os.path.dirname(__file__), 'storage', 'final_schedule.json')
+
+# In-memory storage for schedules
+_CURRENT_SCHEDULE = None
+_FINAL_SCHEDULE = None
 
 # ===============================
 # File I/O Operations
@@ -20,31 +24,49 @@ FINAL_PATH = os.path.join(os.path.dirname(__file__), 'storage', 'final_schedule.
 # Functions for saving and loading schedules
 
 def save_schedule(schedule, path=STORAGE_PATH):
-    """Save the schedule to storage."""
+    """Save the schedule to in-memory storage."""
+    global _CURRENT_SCHEDULE, _FINAL_SCHEDULE
+    
     try:
         # Ensure the schedule has all required IDs
         schedule = ensure_ids(schedule)
-        # Create storage directory if it doesn't exist
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        # Save to file
-        with open(path, 'w') as f:
-            json.dump(schedule, f, indent=2)
+        
+        # Store in the appropriate in-memory variable
+        if path == FINAL_PATH:
+            _FINAL_SCHEDULE = schedule
+        else:
+            _CURRENT_SCHEDULE = schedule
+            
         return schedule
     except Exception as e:
         raise Exception(f"Error saving schedule: {str(e)}")
 
 
 def load_schedule(path=STORAGE_PATH):
-    """Load the schedule from storage."""
+    """Load the schedule from in-memory storage."""
+    global _CURRENT_SCHEDULE, _FINAL_SCHEDULE
+    
     try:
-        with open(path, 'r') as f:
-            schedule = json.load(f)
-        return schedule
-    except FileNotFoundError:
-        # Return empty schedule if file doesn't exist
-        return {"meetings": [], "tasks": [], "course_codes": []}
+        # Return the appropriate in-memory schedule
+        if path == FINAL_PATH:
+            if _FINAL_SCHEDULE is None:
+                return {"meetings": [], "tasks": [], "course_codes": []}
+            return _FINAL_SCHEDULE
+        else:
+            if _CURRENT_SCHEDULE is None:
+                return {"meetings": [], "tasks": [], "course_codes": []}
+            return _CURRENT_SCHEDULE
     except Exception as e:
-        raise Exception(f"Error loading schedule: {str(e)}")
+        # Return empty schedule if any error occurs
+        return {"meetings": [], "tasks": [], "course_codes": []}
+
+# Reset the in-memory schedules
+def reset_schedules():
+    """Reset all in-memory schedules."""
+    global _CURRENT_SCHEDULE, _FINAL_SCHEDULE
+    _CURRENT_SCHEDULE = None
+    _FINAL_SCHEDULE = None
+    return True
 
 # ===============================
 # Time Related Functions
