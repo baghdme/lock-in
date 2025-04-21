@@ -839,14 +839,28 @@ function getSimpleEventType(event) {
 function resetScheduleUI() {
     console.log('resetScheduleUI triggered');
     fetch('/reset-schedule', {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
     })
     .then(response => {
         console.log('Reset schedule response received', response);
-        // If the response is a redirect, use it; otherwise redirect to '/' manually
-        if (response.redirected) {
-            window.location.href = response.url;
+        if (!response.ok) {
+            throw new Error(`HTTP error ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Reset schedule data:', data);
+        // Clear any local storage or state
+        localStorage.removeItem('currentSchedule');
+        currentSchedule = null;
+        
+        if (data.redirect) {
+            window.location.href = data.redirect;
         } else {
+            // For backward compatibility
             window.location.href = '/';
         }
     })

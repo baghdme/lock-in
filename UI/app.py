@@ -660,9 +660,14 @@ def reset_schedule():
     try:
         user = User.query.filter_by(email=session['user']).first()
         if user:
+            # Clear both latest_schedule and parsed_json, but keep preferences and google_calendar
             user.latest_schedule = None
+            user.parsed_json = None
+            user.parsed_json_timestamp = None
             db.session.commit()
             logger.info(f"Reset schedule for user: {user.email}")
+        
+        # Reset the current schedule in memory
         global current_schedule
         current_schedule = None
 
@@ -673,10 +678,19 @@ def reset_schedule():
         else:
             logger.warning(f"Failed to reset stored schedule in EEP1: {response.text}")
 
-        return jsonify({"status": "reset done"})
+        # For AJAX requests, return JSON
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({"status": "reset done", "redirect": url_for('index')})
+        
+        # For regular requests, redirect to index
+        flash('Schedule reset successfully. You can now enter a new schedule.')
+        return redirect(url_for('index'))
     except Exception as e:
         logger.error(f"Error in reset schedule: {str(e)}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({"status": "error", "message": str(e)}), 500
+        flash(f'Error resetting schedule: {str(e)}')
+        return redirect(url_for('index'))
 
 # New routes for preferences handling
 @app.route('/preferences', methods=['GET', 'POST'])
