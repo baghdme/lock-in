@@ -864,15 +864,24 @@ function getSimpleEventType(event) {
     if (event.type === 'study') return 'Study';
     if (event.type === 'exam_preparation') return 'Exam Prep';
     if (event.type === 'presentation_preparation') return 'Presentation Prep';
+    if (event.type === 'meal') return event.description || 'Meal'; // Display meal description (Breakfast/Lunch/Dinner)
+    if (event.type === 'task') return event.description || 'Task'; // For generic tasks
+    if (event.type === 'work') return 'Work';
+    if (event.type === 'research') return 'Research';
+    if (event.type === 'prepare') return 'Preparation';
     
-    // If no specific type, extract a short description from the event's description field
+    // If the description already indicates what it is, use that directly
     if (event.description) {
+        if (event.description.toLowerCase().includes('breakfast')) return 'Breakfast';
+        if (event.description.toLowerCase().includes('lunch')) return 'Lunch';
+        if (event.description.toLowerCase().includes('dinner')) return 'Dinner';
+        
         // Get first word if it's a short description
         const firstWord = event.description.split(' ')[0];
-        if (firstWord.length < 10) return firstWord;
+        if (firstWord.length < 10) return event.description;
         
-        // Or return first 10 chars if it's a long word/phrase
-        return event.description.substring(0, 10) + '...';
+        // Or return full description for readability
+        return event.description;
     }
     
     return 'Event';
