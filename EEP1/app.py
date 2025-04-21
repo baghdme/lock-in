@@ -75,15 +75,6 @@ def parse_schedule():
             # Ensure all items have IDs
             response_text = ensure_ids(response_text)
             
-            # Explicitly check for missing duration_minutes and add to missing_info
-            for meeting in response_text.get('meetings', []):
-                if meeting.get('duration_minutes') is None or meeting.get('duration_minutes') == '':
-                    if 'missing_info' not in meeting:
-                        meeting['missing_info'] = []
-                    if 'duration_minutes' not in meeting.get('missing_info', []):
-                        meeting['missing_info'].append('duration_minutes')
-                        logger.info(f"Added missing_info for duration_minutes on meeting: {meeting.get('description')}")
-            
             # Check for missing information
             questions = check_missing_info(response_text)
             
