@@ -191,6 +191,23 @@ Always schedule regular meal times for EVERY day of the week, including weekends
 
 Use the user's preferred meal times if specified in their preferences, otherwise use reasonable default times. Treat these as fixed appointments that should not have conflicting tasks. Make sure to include meals on all seven days of the week (Monday through Sunday).
 
+# PREPARATION SESSIONS GENERATION
+After scheduling all required meetings, tasks, and meals, analyze the schedule to identify events that would benefit from preparation sessions. Generate appropriate preparation events for:
+
+1. Exams and tests: Create study sessions leading up to exams, with increasing intensity as the exam approaches.
+2. Presentations and project demos: Add preparation time for rehearsal, material finalization, and slide creation.
+3. Assignment deadlines: Include sessions for planning, research, drafting, and review before deadlines.
+4. Important meetings: Schedule brief preparation times before significant meetings.
+
+Follow these guidelines when generating preparation sessions:
+- Base the amount of prep time on the importance/priority of the related event
+- Consider the user's preferences for study session length, break patterns, and productivity times
+- Distribute prep sessions across multiple days when possible (prefer spaced practice)
+- Ensure prep sessions occur before their related events
+- Avoid scheduling too many prep sessions at the expense of rest or previously scheduled events
+- For generated preparation events, use type "generated" to distinguish them
+- Be strategic and purposeful with preparation sessions, don't overschedule the user
+
 # OUTPUT FORMAT
 Your response must include a "generated_calendar" object that follows this structure exactly:
 
@@ -217,11 +234,13 @@ All existing meeting properties (id, type, description, etc.) must be preserved 
 For tasks, include: id, type ("task"), description, course_code, duration, start_time, and end_time.
 For meals, use type "meal" and appropriate descriptions (e.g., "Breakfast", "Lunch", "Dinner").
 For Google Calendar events, use type "google_event" and preserve their original properties.
+For generated preparation events, use type "generated" and include a "related_to" field referencing the ID of the event it's preparing for.
 
 # ADDITIONAL INSTRUCTIONS
 - Do not modify the input data - preserve all IDs and metadata.
 - If a task is too long, split it into multiple sessions of appropriate length (usually 1-2 hours).
 - If you split a task, use the following ID format: "[original-id]-part1", "[original-id]-part2", etc.
+- For generated preparation events, use the ID format: "prep-for-[related-event-id]" or "prep-[descriptive-name]"
 - Ensure your response contains valid JSON that can be parsed.
 - Return ONLY the generated_calendar JSON object and nothing else.
 """
@@ -259,6 +278,7 @@ def get_response_parsing_prompt(llm_response, original_schedule_data):
 4. Fixed meetings from the original schedule must be preserved exactly.
 5. All times must be in 24-hour format (HH:MM).
 6. If the response doesn't contain proper JSON, extract the calendar data and format it correctly.
+7. Ensure all "generated" type events include a "related_to" field referencing the event they're preparing for.
 
 # OUTPUT FORMAT
 Return a valid JSON object with the following structure:

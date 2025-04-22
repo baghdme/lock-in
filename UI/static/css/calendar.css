@@ -121,6 +121,12 @@
   border-left: 4px solid #7678ed;
 }
 
+/* New styles for generated preparation sessions */
+.calendar-container .event-block.generated {
+  background: rgba(186, 104, 200, 0.1);
+  border-left: 4px solid #ba68c8;
+}
+
 /* Event title */
 .calendar-container .event-block strong {
   display: block;
