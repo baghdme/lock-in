@@ -540,12 +540,28 @@ function displayFormattedSchedule(schedule) {
         // Get simplified event description
         const simpleDescription = getSimpleEventType(ev);
         
+        // Calculate the duration in minutes
+        const durationInMinutes = ((eh - sh) * 60 + (em - sm));
+        
+        // Use different HTML template for short events (less than 35 minutes)
+        let contentHTML;
+        if (durationInMinutes <= 35) {
+          // Compact layout for short events - combine title and description in one line
+          contentHTML = `
+            <div class="short-event">
+              <strong>${simpleDescription}, ${startLabel}</strong>
+            </div>`;
+        } else {
+          // Normal layout for longer events
+          contentHTML = `
+            <div><strong>${title}</strong></div>
+            <div>${simpleDescription}</div>
+            ${ev.course_code ? `<div class="course-code">${ev.course_code}</div>` : ''}
+          `;
+        }
+        
         // Build the HTML content
-        eventElement.innerHTML = `
-          <div><strong>${title}</strong></div>
-          <div>${simpleDescription}</div>
-          ${ev.course_code ? `<div class="course-code">${ev.course_code}</div>` : ''}
-        `;
+        eventElement.innerHTML = contentHTML;
         
         // Add to container first (needed to calculate positions correctly)
         container.appendChild(eventElement);
@@ -590,7 +606,7 @@ function displayFormattedSchedule(schedule) {
           width: ${cellWidth - 4}px !important;
           box-sizing: border-box !important;
           margin: 0 !important;
-          padding: 10px 12px !important;
+          padding: ${durationInMinutes <= 35 ? '4px 8px' : '10px 12px'} !important;
           z-index: 10 !important;
           transition: none !important;
           transform: none !important;
@@ -629,6 +645,17 @@ function displayFormattedSchedule(schedule) {
         box-sizing: border-box !important;
         overflow: hidden !important;
         min-height: 0 !important; /* Remove min-height constraint */
+      }
+      /* Short event styling */
+      .calendar-container .event-block .short-event {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.2;
+      }
+      .calendar-container .event-block .short-event strong {
+        margin-bottom: 0;
+        font-size: 0.85rem;
       }
       /* Coloring for different event types */
       .calendar-container .event-block {
