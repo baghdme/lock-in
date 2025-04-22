@@ -178,17 +178,18 @@ These preferences should guide your scheduling decisions:
 9. Respect the user's sleep and wake times - don't schedule activities outside of these hours.
 10. Avoid scheduling important tasks during the user's meal times.
 11. Consider the user's preferred study session length when allocating time for tasks.
-12. If the user prefers not to work on weekends or prefers a lighter weekend load, adjust accordingly.
+12. Respect user preferences for weekend scheduling, but ensure weekend days (Saturday and Sunday) are fully included in the schedule.
 13. Match the user's focus duration - schedule difficult tasks in chunks that match their ability to focus.
 14. Apply the user's learning style preference (spaced, blocked, or interleaved) when scheduling similar tasks.
+15. Weekend events (Saturday and Sunday) are just as important as weekday events - make sure to include all meals and events on weekends.
 
 # MEAL TIMES
-Always schedule regular meal times each day:
-1. Breakfast: Include a 30-minute breakfast slot (typically between 7:00-9:00)
-2. Lunch: Include a 60-minute lunch break (typically between 12:00-14:00)
-3. Dinner: Include a 60-minute dinner time (typically between 18:00-20:00)
+Always schedule regular meal times for EVERY day of the week, including weekends:
+1. Breakfast: Include a 30-minute breakfast slot (typically between 7:00-9:00, can be later on weekends 8:00-10:00)
+2. Lunch: Include a 60-minute lunch break (typically between 12:00-14:00, can be more flexible on weekends 11:00-15:00)
+3. Dinner: Include a 60-minute dinner time (typically between 18:00-20:00, can be later on weekends 18:00-21:00)
 
-Use the user's preferred meal times if specified in their preferences, otherwise use reasonable default times. Treat these as fixed appointments that should not have conflicting tasks.
+Use the user's preferred meal times if specified in their preferences, otherwise use reasonable default times. Treat these as fixed appointments that should not have conflicting tasks. Make sure to include meals on all seven days of the week (Monday through Sunday).
 
 # OUTPUT FORMAT
 Your response must include a "generated_calendar" object that follows this structure exactly:

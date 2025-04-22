@@ -694,10 +694,15 @@ def google_calendar_fetch():
         if not data or 'credentials' not in data:
             return jsonify({'error': 'Credentials are required'}), 400
         
-        # Forward the request to IEP3
+        # Forward the request to IEP3, but ensure we're only fetching current week
+        request_data = {
+            'credentials': data['credentials']
+        }
+        
+        # Forward request to IEP3
         response = requests.post(
             f"{IEP3_URL}/fetch-calendar",
-            json=data,
+            json=request_data,
             timeout=30
         )
         

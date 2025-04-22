@@ -4,7 +4,6 @@
 
 {% block additional_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/calendar.css') }}" />
-<link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}" />
 <style>
   .container-schedule {
     margin: 0 auto;
@@ -13,20 +12,15 @@
   }
   .schedule-content {
     display: flex;
-    gap: 25px;
-    justify-content: flex-start;
+    justify-content: center;
     text-align: left;
   }
   .schedule-wrapper {
-    flex: 4;
+    flex: 1;
     overflow: hidden;
     box-shadow: 0 4px 12px rgba(0,0,0,0.05);
     border-radius: 12px;
-  }
-  .chat-wrapper {
-    flex: 1;
-    min-width: 320px;
-    max-width: 400px;
+    max-width: 1200px;
   }
   .header-container {
     display: flex;
@@ -123,33 +117,6 @@
     <div id="scheduleContainer" class="schedule-wrapper">
       <div id="scheduleOutput"></div>
     </div>
-    <div class="chat-wrapper">
-      <div id="chat-container">
-        <div class="chat-header">Schedule Assistant</div>
-        <div id="chat-log">
-          <!-- Chat messages will appear here -->
-        </div>
-        <div id="chat-form-container">
-          <div style="position: relative; width: 100%;">
-            <form id="chat-form" onsubmit="sendChatMessage(); return false;">
-              <div class="input-with-buttons">
-                <button type="button" class="circular-button upload-button" aria-label="Upload file" style="background-color: #ff6b6b !important; border-radius: 50% !important; display: flex !important; align-items: center !important; justify-content: center !important; width: 36px !important; height: 36px !important; min-width: 36px !important; min-height: 36px !important; padding: 0 !important; border: none !important; margin: 2px !important; color: white !important;">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="stroke: white !important;">
-                    <path d="M12 5v14M5 12h14" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </button>
-                <input type="text" id="user-input" placeholder="Ask about your schedule..." />
-                <button type="submit" class="circular-button send-button" aria-label="Send message" style="background-color: #ff6b6b !important; border-radius: 50% !important; display: flex !important; align-items: center !important; justify-content: center !important; width: 36px !important; height: 36px !important; min-width: 36px !important; min-height: 36px !important; padding: 0 !important; border: none !important; margin: 2px !important; color: white !important;">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="stroke: white !important;">
-                    <path d="M5 12h14M13 5l7 7-7 7" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </div>
 {% endblock %}
@@ -202,80 +169,10 @@
         outputEl.innerHTML = '<div class="error-message">No schedule content loaded. Please generate a new schedule.</div>';
       }
     }, 3000);
-    
-    // Add initial welcome message
-    const chatLog = document.getElementById('chat-log');
-    const assistantContainer = document.createElement('div');
-    assistantContainer.className = 'message-container assistant-container';
-    const assistantMessage = document.createElement('div');
-    assistantMessage.className = 'message assistant';
-    assistantMessage.textContent = "Welcome! I can help you understand your schedule. You can ask me things like 'What meetings do I have on Monday?' or 'When is my next exam?'";
-    assistantContainer.appendChild(assistantMessage);
-    chatLog.appendChild(assistantContainer);
-    
-    // Add click handler for upload button
-    const uploadButton = document.querySelector('.upload-button');
-    if (uploadButton) {
-      uploadButton.addEventListener('click', () => {
-        alert('File upload feature would appear here!');
-      });
-    }
   }
 </script>
 
 <script>
-  function sendChatMessage() {
-    const input = document.getElementById('user-input');
-    const message = input.value.trim();
-    if (message === '') return;
-    
-    const chatLog = document.getElementById('chat-log');
-    
-    // Add user message
-    const userContainer = document.createElement('div');
-    userContainer.className = 'message-container user-container';
-    
-    const userMessage = document.createElement('div');
-    userMessage.className = 'message user';
-    userMessage.textContent = message;
-    
-    userContainer.appendChild(userMessage);
-    chatLog.appendChild(userContainer);
-    
-    // Clear input
-    input.value = '';
-    
-    // Simulate assistant response (in a real app, this would come from an API)
-    setTimeout(() => {
-      // Add assistant message
-      const assistantContainer = document.createElement('div');
-      assistantContainer.className = 'message-container assistant-container';
-      
-      const assistantMessage = document.createElement('div');
-      assistantMessage.className = 'message assistant';
-      
-      // Customize responses based on common schedule questions
-      if (message.toLowerCase().includes('monday')) {
-        assistantMessage.textContent = "Looking at your Monday schedule, I can see you have several items scheduled. Is there something specific about Monday you'd like to know?";
-      } else if (message.toLowerCase().includes('exam')) {
-        assistantMessage.textContent = "I can see you have an exam coming up. Would you like to know more about your exam preparation schedule?";
-      } else if (message.toLowerCase().includes('busy') || message.toLowerCase().includes('free time')) {
-        assistantMessage.textContent = "Based on your schedule, your busiest days appear to be in the middle of the week. You have more free time on weekends.";
-      } else {
-        assistantMessage.textContent = "I can help you understand your schedule better. You can ask about specific days, events, or even when you might have free time.";
-      }
-      
-      assistantContainer.appendChild(assistantMessage);
-      chatLog.appendChild(assistantContainer);
-      
-      // Scroll to bottom
-      chatLog.scrollTop = chatLog.scrollHeight;
-    }, 1000);
-    
-    // Scroll to bottom after user message
-    chatLog.scrollTop = chatLog.scrollHeight;
-  }
-
   function regenerateSchedule() {
     // Show loading state
     const scheduleOutput = document.getElementById('scheduleOutput');
@@ -300,32 +197,10 @@
       // Update the UI with the new schedule
       localStorage.setItem('currentSchedule', JSON.stringify(data));
       processSchedule(data);
-      
-      // Add message to chat log about successful regeneration
-      const chatLog = document.getElementById('chat-log');
-      const assistantContainer = document.createElement('div');
-      assistantContainer.className = 'message-container assistant-container';
-      const assistantMessage = document.createElement('div');
-      assistantMessage.className = 'message assistant';
-      assistantMessage.textContent = "I've regenerated your schedule based on your current preferences!";
-      assistantContainer.appendChild(assistantMessage);
-      chatLog.appendChild(assistantContainer);
-      chatLog.scrollTop = chatLog.scrollHeight;
     })
     .catch(error => {
       console.error('Error regenerating schedule:', error);
       scheduleOutput.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
-      
-      // Add error message to chat log
-      const chatLog = document.getElementById('chat-log');
-      const assistantContainer = document.createElement('div');
-      assistantContainer.className = 'message-container assistant-container';
-      const assistantMessage = document.createElement('div');
-      assistantMessage.className = 'message assistant';
-      assistantMessage.textContent = `I couldn't regenerate your schedule: ${error.message}. Please try again later.`;
-      assistantContainer.appendChild(assistantMessage);
-      chatLog.appendChild(assistantContainer);
-      chatLog.scrollTop = chatLog.scrollHeight;
     });
   }
 
@@ -366,23 +241,6 @@
       return response.json();
     })
     .then(data => {
-      // Add message to chat log about successful export
-      const chatLog = document.getElementById('chat-log');
-      const assistantContainer = document.createElement('div');
-      assistantContainer.className = 'message-container assistant-container';
-      const assistantMessage = document.createElement('div');
-      assistantMessage.className = 'message assistant';
-      
-      if (data.created === 0) {
-        assistantMessage.textContent = "No new events were added to your Google Calendar. All events may already exist or be imported from Google Calendar.";
-      } else {
-        assistantMessage.textContent = `Successfully exported ${data.created} events to your Google Calendar!`;
-      }
-      
-      assistantContainer.appendChild(assistantMessage);
-      chatLog.appendChild(assistantContainer);
-      chatLog.scrollTop = chatLog.scrollHeight;
-      
       // Alert the user about the successful export
       if (data.created > 0) {
         alert(`Successfully exported ${data.created} events to your Google Calendar!`);
@@ -397,17 +255,6 @@
       if (error.message === 'AUTH_REDIRECT') {
         return;
       }
-      
-      // Add error message to chat log
-      const chatLog = document.getElementById('chat-log');
-      const assistantContainer = document.createElement('div');
-      assistantContainer.className = 'message-container assistant-container';
-      const assistantMessage = document.createElement('div');
-      assistantMessage.className = 'message assistant';
-      assistantMessage.textContent = `I couldn't export your schedule to Google Calendar: ${error.message}. Please try again later.`;
-      assistantContainer.appendChild(assistantMessage);
-      chatLog.appendChild(assistantContainer);
-      chatLog.scrollTop = chatLog.scrollHeight;
       
       // Alert the user about the error
       alert(`Error exporting to Google Calendar: ${error.message}`);

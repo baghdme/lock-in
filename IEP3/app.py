@@ -146,14 +146,21 @@ def fetch_calendar():
             'calendar', 'v3', credentials=credentials
         )
         
-        # Get time boundaries (two weeks by default)
-        days_to_fetch = data.get('days', 14)
-        time_min = datetime.utcnow()
-        time_max = time_min + timedelta(days=days_to_fetch)
+        # Calculate the current week's Monday and Sunday
+        today = datetime.utcnow()
+        days_to_monday = today.weekday()  # 0 is Monday, 6 is Sunday
+        monday = today - timedelta(days=days_to_monday)
+        sunday = monday + timedelta(days=6)
+        
+        # Set to beginning of Monday and end of Sunday
+        time_min = datetime(monday.year, monday.month, monday.day, 0, 0, 0)
+        time_max = datetime(sunday.year, sunday.month, sunday.day, 23, 59, 59)
         
         # Format times for Google API
         time_min_str = time_min.isoformat() + 'Z'
         time_max_str = time_max.isoformat() + 'Z'
+        
+        logger.info(f"Fetching calendar events from {time_min.strftime('%Y-%m-%d')} to {time_max.strftime('%Y-%m-%d')}")
         
         # Fetch events from primary calendar
         events_result = calendar_service.events().list(
@@ -310,15 +317,18 @@ def format_event_for_google(event, user_timezone='America/New_York'):
     # Get the date for the day of the week
     day_name = event.get('day', 'Monday')
     today = datetime.now()
-    days_ahead = {'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 
-                 'Thursday': 3, 'Friday': 4, 'Saturday': 5, 'Sunday': 6}
     
-    # Calculate the next occurrence of this day
-    days_until_next = (days_ahead[day_name] - today.weekday()) % 7
-    if days_until_next == 0:  # If today is the day, use next week
-        days_until_next = 7
+    # Calculate the start of the current week (Monday)
+    days_to_monday = today.weekday()  # 0 is Monday, 6 is Sunday
+    current_week_monday = today - timedelta(days=days_to_monday)
     
-    event_date = (today + timedelta(days=days_until_next)).strftime('%Y-%m-%d')
+    # Map day names to offsets from Monday
+    days_offset = {'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 
+                  'Thursday': 3, 'Friday': 4, 'Saturday': 5, 'Sunday': 6}
+    
+    # Get the date for this day in the current week
+    event_date = (current_week_monday + timedelta(days=days_offset[day_name])).strftime('%Y-%m-%d')
+    logger.info(f"Creating event for {day_name} on {event_date}")
     
     # Extract event details
     event_type = event.get('type', 'task')
@@ -367,6 +377,9 @@ def normalize_time(time_str, event_type, description):
         'breakfast': (7, 10),   # 7 AM - 10 AM
         'lunch': (11, 14),      # 11 AM - 2 PM
         'dinner': (17, 21),     # 5 PM - 9 PM
+        'weekend_breakfast': (8, 11),  # 8 AM - 11 AM (later on weekends)
+        'weekend_lunch': (11, 15),     # 11 AM - 3 PM (more flexible on weekends)
+        'weekend_dinner': (17, 22),    # 5 PM - 10 PM (later on weekends)
         'exam': (9, 17),        # 9 AM - 5 PM (daytime)
         'class': (8, 18),       # 8 AM - 6 PM (daytime)
         'task': (9, 17)         # 9 AM - 5 PM (daytime)
@@ -375,13 +388,20 @@ def normalize_time(time_str, event_type, description):
     # Determine default time range based on event
     time_range = default_ranges['task']  # Default fallback
     
+    # Check if this is a weekend day (for day-specific time adjustment)
+    is_weekend = False
+    if hasattr(description, 'get') and description.get('day') in ['Saturday', 'Sunday']:
+        is_weekend = True
+    elif isinstance(description, str) and any(day in description.lower() for day in ['saturday', 'sunday']):
+        is_weekend = True
+    
     if event_type == 'meal':
         if any(meal in description for meal in ['breakfast', 'morning meal']):
-            time_range = default_ranges['breakfast']
+            time_range = default_ranges['weekend_breakfast'] if is_weekend else default_ranges['breakfast']
         elif any(meal in description for meal in ['lunch', 'midday meal']):
-            time_range = default_ranges['lunch']
+            time_range = default_ranges['weekend_lunch'] if is_weekend else default_ranges['lunch']
         elif any(meal in description for meal in ['dinner', 'supper', 'evening meal']):
-            time_range = default_ranges['dinner']
+            time_range = default_ranges['weekend_dinner'] if is_weekend else default_ranges['dinner']
     elif event_type == 'class' or 'class' in description:
         time_range = default_ranges['class']
     elif event_type == 'exam' or any(term in description for term in ['exam', 'test', 'quiz']):

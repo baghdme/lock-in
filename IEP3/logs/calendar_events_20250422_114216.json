@@ -1,0 +1,500 @@
+[
+  {
+    "original": {
+      "description": "Breakfast",
+      "end_time": "08:30",
+      "start_time": "08:00",
+      "type": "meal",
+      "day": "Friday"
+    },
+    "formatted": {
+      "summary": "Breakfast",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-25T08:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-25T08:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Breakfast\", \"end_time\": \"08:30\", \"start_time\": \"08:00\", \"type\": \"meal\", \"day\": \"Friday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:09.137524"
+  },
+  {
+    "original": {
+      "description": "Lunch",
+      "end_time": "14:30",
+      "start_time": "13:30",
+      "type": "meal",
+      "day": "Friday"
+    },
+    "formatted": {
+      "summary": "Lunch",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-25T13:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-25T14:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Lunch\", \"end_time\": \"14:30\", \"start_time\": \"13:30\", \"type\": \"meal\", \"day\": \"Friday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:09.663072"
+  },
+  {
+    "original": {
+      "description": "Dinner",
+      "end_time": "20:00",
+      "start_time": "19:00",
+      "type": "meal",
+      "day": "Friday"
+    },
+    "formatted": {
+      "summary": "Dinner",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-25T19:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-25T20:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Dinner\", \"end_time\": \"20:00\", \"start_time\": \"19:00\", \"type\": \"meal\", \"day\": \"Friday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:10.047473"
+  },
+  {
+    "original": {
+      "description": "Breakfast",
+      "end_time": "08:30",
+      "start_time": "08:00",
+      "type": "meal",
+      "day": "Monday"
+    },
+    "formatted": {
+      "summary": "Breakfast",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-28T08:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-28T08:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Breakfast\", \"end_time\": \"08:30\", \"start_time\": \"08:00\", \"type\": \"meal\", \"day\": \"Monday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:10.483251"
+  },
+  {
+    "original": {
+      "description": "Lunch",
+      "end_time": "13:30",
+      "start_time": "12:30",
+      "type": "meal",
+      "day": "Monday"
+    },
+    "formatted": {
+      "summary": "Lunch",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-28T12:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-28T13:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Lunch\", \"end_time\": \"13:30\", \"start_time\": \"12:30\", \"type\": \"meal\", \"day\": \"Monday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:10.994208"
+  },
+  {
+    "original": {
+      "description": "Dinner",
+      "end_time": "20:00",
+      "start_time": "19:00",
+      "type": "meal",
+      "day": "Monday"
+    },
+    "formatted": {
+      "summary": "Dinner",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-28T19:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-28T20:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Dinner\", \"end_time\": \"20:00\", \"start_time\": \"19:00\", \"type\": \"meal\", \"day\": \"Monday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:11.506232"
+  },
+  {
+    "original": {
+      "description": "Breakfast",
+      "end_time": "08:30",
+      "start_time": "08:00",
+      "type": "meal",
+      "day": "Thursday"
+    },
+    "formatted": {
+      "summary": "Breakfast",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-24T08:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-24T08:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Breakfast\", \"end_time\": \"08:30\", \"start_time\": \"08:00\", \"type\": \"meal\", \"day\": \"Thursday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:12.018304"
+  },
+  {
+    "original": {
+      "description": "Lunch",
+      "end_time": "13:30",
+      "start_time": "12:30",
+      "type": "meal",
+      "day": "Thursday"
+    },
+    "formatted": {
+      "summary": "Lunch",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-24T12:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-24T13:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Lunch\", \"end_time\": \"13:30\", \"start_time\": \"12:30\", \"type\": \"meal\", \"day\": \"Thursday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:12.613562"
+  },
+  {
+    "original": {
+      "course_code": "EECE503N",
+      "description": "exam",
+      "end_time": "19:00",
+      "id": "7fc6589a-e0c1-455c-84d7-ee1e523a4f99",
+      "start_time": "17:00",
+      "type": "exam",
+      "day": "Thursday"
+    },
+    "formatted": {
+      "summary": "exam",
+      "location": "",
+      "description": "Event Type: exam\nCourse: EECE503N\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-24T17:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-24T19:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"course_code\": \"EECE503N\", \"description\": \"exam\", \"end_time\": \"19:00\", \"id\": \"7fc6589a-e0c1-455c-84d7-ee1e523a4f99\", \"start_time\": \"17:00\", \"type\": \"exam\", \"day\": \"Thursday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:13.041920"
+  },
+  {
+    "original": {
+      "description": "Dinner",
+      "end_time": "20:00",
+      "start_time": "19:00",
+      "type": "meal",
+      "day": "Thursday"
+    },
+    "formatted": {
+      "summary": "Dinner",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-24T19:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-24T20:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Dinner\", \"end_time\": \"20:00\", \"start_time\": \"19:00\", \"type\": \"meal\", \"day\": \"Thursday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:13.553621"
+  },
+  {
+    "original": {
+      "description": "Breakfast",
+      "end_time": "08:30",
+      "start_time": "08:00",
+      "type": "meal",
+      "day": "Tuesday"
+    },
+    "formatted": {
+      "summary": "Breakfast",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-29T08:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-29T08:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Breakfast\", \"end_time\": \"08:30\", \"start_time\": \"08:00\", \"type\": \"meal\", \"day\": \"Tuesday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:14.001779"
+  },
+  {
+    "original": {
+      "description": "Lunch",
+      "end_time": "13:30",
+      "start_time": "12:30",
+      "type": "meal",
+      "day": "Tuesday"
+    },
+    "formatted": {
+      "summary": "Lunch",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-29T12:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-29T13:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Lunch\", \"end_time\": \"13:30\", \"start_time\": \"12:30\", \"type\": \"meal\", \"day\": \"Tuesday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:14.475788"
+  },
+  {
+    "original": {
+      "description": "Dinner",
+      "end_time": "20:00",
+      "start_time": "19:00",
+      "type": "meal",
+      "day": "Tuesday"
+    },
+    "formatted": {
+      "summary": "Dinner",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-29T19:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-29T20:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Dinner\", \"end_time\": \"20:00\", \"start_time\": \"19:00\", \"type\": \"meal\", \"day\": \"Tuesday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:14.944587"
+  },
+  {
+    "original": {
+      "description": "Breakfast",
+      "end_time": "08:30",
+      "start_time": "08:00",
+      "type": "meal",
+      "day": "Wednesday"
+    },
+    "formatted": {
+      "summary": "Breakfast",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-23T08:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-23T08:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Breakfast\", \"end_time\": \"08:30\", \"start_time\": \"08:00\", \"type\": \"meal\", \"day\": \"Wednesday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:15.306162"
+  },
+  {
+    "original": {
+      "description": "Lunch",
+      "end_time": "13:30",
+      "start_time": "12:30",
+      "type": "meal",
+      "day": "Wednesday"
+    },
+    "formatted": {
+      "summary": "Lunch",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-23T12:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-23T13:30:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Lunch\", \"end_time\": \"13:30\", \"start_time\": \"12:30\", \"type\": \"meal\", \"day\": \"Wednesday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:15.909764"
+  },
+  {
+    "original": {
+      "description": "Dinner",
+      "end_time": "20:00",
+      "start_time": "19:00",
+      "type": "meal",
+      "day": "Wednesday"
+    },
+    "formatted": {
+      "summary": "Dinner",
+      "location": "",
+      "description": "Event Type: meal\nCreated by Lock-In Scheduler",
+      "start": {
+        "dateTime": "2025-04-23T19:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "end": {
+        "dateTime": "2025-04-23T20:00:00",
+        "timeZone": "Asia/Beirut"
+      },
+      "reminders": {
+        "useDefault": true
+      },
+      "extendedProperties": {
+        "private": {
+          "originalEvent": "{\"description\": \"Dinner\", \"end_time\": \"20:00\", \"start_time\": \"19:00\", \"type\": \"meal\", \"day\": \"Wednesday\"}"
+        }
+      }
+    },
+    "timestamp": "2025-04-22T11:42:16.365931"
+  }
+]
