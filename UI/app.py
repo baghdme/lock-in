@@ -48,6 +48,7 @@ class User(db.Model):
     parsed_json_timestamp = db.Column(db.DateTime, nullable=True)  # When the parsed JSON was last updated
     google_calendar = db.Column(db.Text, nullable=True)  # Store Google Calendar data
     google_calendar_timestamp = db.Column(db.DateTime, nullable=True)  # When the Google Calendar was imported
+    custom_prompt = db.Column(db.Text, nullable=True)  # Store personalized prompt versions for schedule generation
     
     def __repr__(self):
         return f'<User {self.email}>'
@@ -749,88 +750,6 @@ def preferences():
         user_preferences=user_preferences
     )
 
-@app.route('/regenerate-schedule', methods=['POST'])
-@login_required
-def regenerate_schedule():
-    """Regenerate schedule based on stored parsed JSON and current preferences."""
-    try:
-        user = User.query.filter_by(email=session['user']).first()
-        
-        # Verify user has parsed JSON
-        if not user.parsed_json:
-            return jsonify({"error": "No parsed schedule data available for regeneration"}), 400
-            
-        # Load parsed JSON (schedule)
-        try:
-            schedule = json.loads(user.parsed_json)
-            logger.info("Loaded parsed JSON for schedule regeneration")
-        except json.JSONDecodeError:
-            logger.error(f"Error parsing stored JSON for user {user.email}")
-            return jsonify({"error": "Invalid stored schedule data"}), 400
-        
-        # Load user preferences
-        user_preferences = None
-        if user.preferences:
-            try:
-                user_preferences = json.loads(user.preferences)
-                logger.info("Including user preferences in regeneration request")
-            except json.JSONDecodeError:
-                logger.error(f"Error parsing user preferences JSON for user {user.email}")
-        
-        # Load Google Calendar data
-        google_calendar = None
-        if user.google_calendar:
-            try:
-                google_calendar = json.loads(user.google_calendar)
-                logger.info("Including Google Calendar data in regeneration request")
-            except json.JSONDecodeError:
-                logger.error(f"Error parsing Google Calendar JSON for user {user.email}")
-        
-        # Prepare request data
-        request_data = {
-            'schedule': schedule,
-            'regenerate': True
-        }
-        
-        # Add preferences if available
-        if user_preferences:
-            request_data['preferences'] = user_preferences
-        
-        # Add Google Calendar if available
-        if google_calendar:
-            request_data['google_calendar'] = google_calendar
-        
-        # Call EEP1 to generate the optimized schedule
-        logger.info(f"Sending regeneration request to EEP1 with data: {list(request_data.keys())}")
-        response = requests.post(
-            f"{EEP1_URL}/generate-optimized-schedule",
-            json=request_data,
-            headers={'Content-Type': 'application/json'},
-            timeout=30
-        )
-        
-        # Check if the request was successful
-        if response.status_code != 200:
-            error_data = response.json()
-            error_msg = error_data.get('error', 'Unknown error') 
-            logger.error(f"Error regenerating schedule: {error_msg}")
-            return jsonify({"error": error_msg}), response.status_code
-            
-        # Get the response data
-        response_data = response.json()
-        
-        # Update user's record with the new schedule
-        user.latest_schedule = json.dumps(response_data)
-        user.schedule_timestamp = datetime.utcnow()
-        db.session.commit()
-        logger.info("Updated user's schedule with regenerated schedule")
-        
-        return jsonify(response_data)
-        
-    except Exception as e:
-        logger.error(f"Error in regenerate_schedule: {str(e)}")
-        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
-
 # Google Calendar Integration Routes
 @app.route('/google-calendar/authorize', methods=['GET'])
 @login_required
@@ -1030,6 +949,150 @@ def google_calendar_callback():
         logger.error(f"Error in Google Calendar callback: {str(e)}")
         flash(f'Error importing Google Calendar: {str(e)}')
         return redirect(url_for('index'))
+
+# -------------------------------
+# IEP4 Chat Integration
+# -------------------------------
+@app.route('/chat', methods=['POST'])
+@login_required
+def chat():
+    """Process a chat message to modify schedule interactively."""
+    try:
+        data = request.get_json()
+        if not data or 'message' not in data:
+            return jsonify({'error': 'No message provided'}), 400
+            
+        user = User.query.filter_by(email=session['user']).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        # Check if we have a schedule
+        if not user.latest_schedule:
+            return jsonify({'error': 'No schedule found. Please generate a schedule first.'}), 400
+        
+        # Get the schedule as a Python dict
+        schedule = json.loads(user.latest_schedule)
+        
+        # Get chat history from session or initialize empty list
+        if 'chat_history' not in session:
+            session['chat_history'] = []
+            
+        # Add user message to history
+        session['chat_history'].append({
+            'role': 'user',
+            'content': data['message']
+        })
+        
+        # Prepare data for EEP1
+        eep1_data = {
+            'message': data['message'],
+            'user_id': user.id,
+            'chat_history': session['chat_history']
+        }
+        
+        # Send to EEP1 for processing
+        response = requests.post(f'{EEP1_URL}/chat', json=eep1_data, timeout=300)
+        response.raise_for_status()
+        response_data = response.json()
+        
+        # Extract assistant response and updated schedule
+        if 'response' in response_data:
+            # Add assistant response to chat history
+            session['chat_history'].append({
+                'role': 'assistant',
+                'content': response_data['response']
+            })
+            
+            # Limit chat history to last 10 messages to prevent session bloat
+            if len(session['chat_history']) > 10:
+                session['chat_history'] = session['chat_history'][-10:]
+                
+            # Save chat history to session
+            session.modified = True
+            
+        # Update user's schedule if present
+        if 'schedule' in response_data:
+            # Save the updated schedule
+            user.latest_schedule = json.dumps(response_data['schedule'])
+            user.schedule_timestamp = datetime.utcnow()
+            db.session.commit()
+            
+        return jsonify(response_data)
+        
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'Request to EEP1 timed out'}), 504
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'Request to EEP1 failed: {str(e)}'}), 500
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/finalize-chat', methods=['POST'])
+@login_required
+def finalize_chat():
+    """Finalize chat and update the user's custom prompt."""
+    try:
+        user = User.query.filter_by(email=session['user']).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        # Get the chat history from session
+        chat_history = session.get('chat_history', [])
+        
+        # If no chat history, return early
+        if not chat_history:
+            return jsonify({'message': 'No chat history to process'}), 200
+            
+        # Get the original prompt
+        original_prompt = user.custom_prompt
+        if not original_prompt:
+            # Fetch the default prompt from EEP1
+            prompt_response = requests.get(f'{EEP1_URL}/get-prompt', params={'user_id': user.id}, timeout=30)
+            prompt_response.raise_for_status()
+            original_prompt = prompt_response.json().get('prompt', '')
+            
+        # Prepare data for EEP1
+        data = {
+            'original_prompt': original_prompt,
+            'chat_history': chat_history,
+            'user_id': user.id
+        }
+        
+        # Send to EEP1 for processing
+        response = requests.post(f'{EEP1_URL}/update-prompt', json=data, timeout=300)
+        response.raise_for_status()
+        response_data = response.json()
+        
+        # Update the user's custom prompt
+        if 'custom_prompt' in response_data:
+            user.custom_prompt = response_data['custom_prompt']
+            db.session.commit()
+            logger.info(f"Updated custom prompt for user {user.email}")
+            
+            # Clear chat history after updating prompt
+            session.pop('chat_history', None)
+            session.modified = True
+            
+        return jsonify({'message': 'Chat finalized and prompt updated', 'success': True})
+        
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'Request to EEP1 timed out'}), 504
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'Request to EEP1 failed: {str(e)}'}), 500
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+        
+@app.route('/get-chat-history', methods=['GET'])
+@login_required
+def get_chat_history():
+    """Return the current chat history from session."""
+    try:
+        chat_history = session.get('chat_history', [])
+        return jsonify({'chat_history': chat_history})
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5002, debug=True) 

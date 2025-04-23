@@ -26,9 +26,11 @@ CORS(app)  # Enable CORS for all routes
 IEP1_URL = os.getenv('IEP1_URL', 'http://localhost:5001')
 IEP2_URL = os.getenv('IEP2_URL', 'http://localhost:5004')
 IEP3_URL = os.getenv('IEP3_URL', 'http://localhost:5003')
+IEP4_URL = os.getenv('IEP4_URL', 'http://localhost:5005')
 logger.debug(f"Using IEP1_URL: {IEP1_URL}")
 logger.debug(f"Using IEP2_URL: {IEP2_URL}")
 logger.debug(f"Using IEP3_URL: {IEP3_URL}")
+logger.debug(f"Using IEP4_URL: {IEP4_URL}")
 
 # -------------------------------
 # Parsing and Storage Endpoints
@@ -507,6 +509,7 @@ def generate_optimized_schedule():
         schedule = data['schedule']
         preferences = data.get('preferences', None)
         google_calendar = data.get('google_calendar', None)
+        custom_prompt = data.get('custom_prompt', None)
             
         # Validate the schedule
         questions = check_missing_info(schedule)
@@ -526,8 +529,14 @@ def generate_optimized_schedule():
             logger.info("No Google Calendar data provided in request")
         
         try:
-            # Generate the prompt using our helper function
-            prompt = get_schedule_prompt(cleaned_schedule, preferences, google_calendar)
+            # Check if custom prompt is available
+            if custom_prompt:
+                logger.info("Using custom prompt from request")
+                prompt = custom_prompt
+            else:
+                # Generate the prompt using our helper function
+                logger.info("Using default prompt template")
+                prompt = get_schedule_prompt(cleaned_schedule, preferences, google_calendar)
             
             # Call IEP2 to get the LLM response
             response = requests.post(
@@ -832,6 +841,142 @@ def reset_stored_schedule():
     except Exception as e:
         logger.error("Error resetting stored schedule:", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+# -------------------------------
+# IEP4 Chat and Prompt Integration
+# -------------------------------
+@app.route('/chat', methods=['POST'])
+def handle_chat():
+    """Handle chat messages and update schedule through IEP4."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        # Extract the message and user ID
+        message = data.get('message')
+        user_id = data.get('user_id')
+        
+        if not message:
+            return jsonify({'error': 'No message provided'}), 400
+        if not user_id:
+            return jsonify({'error': 'No user ID provided'}), 400
+            
+        # Get the current schedule
+        schedule = load_schedule(is_final=True)
+        if not schedule:
+            return jsonify({'error': 'No schedule found'}), 404
+            
+        # Get chat history if provided
+        chat_history = data.get('chat_history', [])
+        
+        # Prepare data for IEP4
+        iep4_data = {
+            'message': message,
+            'schedule': schedule,
+            'chat_history': chat_history
+        }
+        
+        # Send to IEP4
+        try:
+            response = requests.post(
+                f"{IEP4_URL}/chat",
+                json=iep4_data,
+                timeout=300  # Increased timeout to 300 seconds (5 minutes)
+            )
+            response.raise_for_status()
+            
+            # Get the response
+            response_data = response.json()
+            
+            # Extract updated schedule and save it
+            if 'schedule' in response_data:
+                updated_schedule = response_data['schedule']
+                save_schedule(updated_schedule)
+                
+            return jsonify(response_data)
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error communicating with IEP4: {str(e)}")
+            return jsonify({'error': f'Error communicating with IEP4: {str(e)}'}), 500
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in chat handler: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/update-prompt', methods=['POST'])
+def update_prompt():
+    """Update user's custom prompt based on chat history."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        # Extract the original prompt, chat history and user ID
+        original_prompt = data.get('original_prompt')
+        chat_history = data.get('chat_history', [])
+        user_id = data.get('user_id')
+        
+        if not original_prompt:
+            return jsonify({'error': 'No original prompt provided'}), 400
+        if not user_id:
+            return jsonify({'error': 'No user ID provided'}), 400
+            
+        # Prepare data for IEP4
+        iep4_data = {
+            'original_prompt': original_prompt,
+            'chat_history': chat_history
+        }
+        
+        # Send to IEP4
+        try:
+            response = requests.post(
+                f"{IEP4_URL}/update-prompt",
+                json=iep4_data,
+                timeout=300
+            )
+            response.raise_for_status()
+            
+            # Get the response
+            response_data = response.json()
+            
+            return jsonify(response_data)
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error communicating with IEP4: {str(e)}")
+            return jsonify({'error': f'Error communicating with IEP4: {str(e)}'}), 500
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in prompt update: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get-prompt', methods=['GET'])
+def get_prompt():
+    """Get the current prompt template for schedule generation."""
+    try:
+        # Get the user ID from the request
+        user_id = request.args.get('user_id')
+        
+        if not user_id:
+            return jsonify({'error': 'No user ID provided'}), 400
+            
+        # Get request origin and UI URL from the request headers
+        origin = request.headers.get('Origin', '')
+        
+        # If we're being called from outside the app (i.e., from the UI),
+        # just return the default prompt for now. In a full implementation,
+        # we would store user-specific prompts in a database and retrieve them here.
+        # The UI should handle the custom_prompt field for the user.
+        default_prompt = get_schedule_prompt()
+        
+        return jsonify({
+            'status': 'success',
+            'prompt': default_prompt
+        })
+        
+    except Exception as e:
+        logger.error(f"Unexpected error fetching prompt: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True) 

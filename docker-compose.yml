@@ -22,12 +22,14 @@ services:
       - IEP1_URL=http://iep1:5001
       - IEP2_URL=http://iep2:5004
       - IEP3_URL=http://iep3:5003
+      - IEP4_URL=http://iep4:5005
     volumes:
       - ./EEP1:/app
     depends_on:
       - iep1
       - iep2
       - iep3
+      - iep4
     networks:
       - app-network
 
@@ -63,6 +65,18 @@ services:
       - OAUTHLIB_INSECURE_TRANSPORT=1  # For development only
     volumes:
       - ./IEP3:/app
+    networks:
+      - app-network
+
+  iep4:
+    build: ./IEP4
+    ports:
+      - "5005:5005"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-claude-3-7-sonnet-20250219}
+    volumes:
+      - ./IEP4:/app
     networks:
       - app-network
 
