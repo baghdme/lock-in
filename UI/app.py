@@ -522,7 +522,7 @@ def generate_optimized_schedule():
         response = requests.post(
             f'{EEP1_URL}/generate-optimized-schedule',
             json=request_data,
-            timeout=30  # Longer timeout for schedule generation
+            timeout=350  # Longer timeout for schedule generation
         )
         
         if not response.ok:

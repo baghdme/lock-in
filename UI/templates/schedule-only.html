@@ -166,10 +166,25 @@
     background-color: #0F9D58;
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 24px;
     padding: 8px 16px;
     margin-left: 10px;
     cursor: pointer;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+  }
+  .chat-done-btn::before {
+    content: '✓';
+    margin-right: 5px;
+    font-size: 16px;
+  }
+  .chat-instructions {
+    font-size: 12px;
+    color: #5f6368;
+    padding: 5px 10px;
+    text-align: right;
+    font-style: italic;
   }
 </style>
 {% endblock %}
@@ -179,8 +194,16 @@
   <!-- Updated header section with improved design for schedule-only.html -->
   <div class="header-container">
     <h1>My Weekly Schedule</h1>
+    <div class="schedule-note" style="margin-bottom: 15px; padding: 10px; background-color: #e8f0fe; border-radius: 4px; border-left: 4px solid #4285f4;">
+      <p style="margin: 0; color: #1a73e8;"><strong>Note:</strong> Use the Schedule Assistant below to make changes, then click <strong>Done</strong> when finished to enable Google Calendar export.</p>
+    </div>
     <div class="schedule-actions">
-      <button onclick="exportToGoogleCalendar()" class="btn btn-primary" style="background-color: #0F9D58;">Export to Google Calendar</button>
+      <div class="export-btn-container" style="position: relative; display: inline-block;">
+        <button id="exportToGoogleBtn" onclick="exportToGoogleCalendar()" class="btn btn-primary" style="background-color: #0F9D58; opacity: 0.6; cursor: not-allowed;" disabled>Export to Google Calendar</button>
+        <div id="exportTooltip" class="tooltip" style="position: absolute; bottom: -40px; left: 0; background-color: #f8f9fa; padding: 8px 12px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); width: 240px; display: none; z-index: 100; font-size: 13px; color: #5f6368; border: 1px solid #e5e5e5;">
+          Please click "Done" in the chat to finalize your schedule before exporting.
+        </div>
+      </div>
       <button onclick="resetScheduleUI()" class="reset-button">Reset Schedule</button>
     </div>
   </div>
@@ -198,7 +221,8 @@
     <div id="chatMessages" class="chat-messages">
       <div class="message assistant-message">
         Hello! I'm your schedule assistant. How would you like me to modify your schedule? 
-        You can ask me to add, remove, or change meetings and tasks.
+        You can ask me to add, remove, or change meetings and tasks. <br><br>
+        When you're finished making changes, please click the <strong>Done</strong> button to finalize your schedule and enable Google Calendar export.
       </div>
     </div>
     <div class="chat-input-container">
@@ -206,6 +230,9 @@
              onkeypress="if(event.key === 'Enter') sendChatMessage()">
       <button onclick="sendChatMessage()" class="chat-send-btn">Send</button>
       <button onclick="finalizeChat()" class="chat-done-btn">Done</button>
+    </div>
+    <div class="chat-instructions">
+      Click "Done" when you've completed your conversation to enable exporting to Google Calendar.
     </div>
   </div>
 </div>
@@ -397,20 +424,41 @@
       // Add confirmation message
       const confirmDiv = document.createElement('div');
       confirmDiv.className = 'message assistant-message';
-      confirmDiv.textContent = 'Chat session complete! Your preferences have been updated based on our conversation.';
+      confirmDiv.innerHTML = '<strong>Chat session complete!</strong> Your preferences have been updated based on our conversation.<br><br>The <strong>Export to Google Calendar</strong> button is now enabled. You can export your schedule to Google Calendar.';
       chatMessages.appendChild(confirmDiv);
-      
-      // Clear chat history (except for the welcome and confirmation messages)
-      setTimeout(() => {
-        const welcomeMessage = chatMessages.firstElementChild;
-        const confirmMessage = chatMessages.lastElementChild;
-        chatMessages.innerHTML = '';
-        chatMessages.appendChild(welcomeMessage);
-        chatMessages.appendChild(confirmMessage);
-      }, 3000);
       
       // Scroll to bottom
       chatMessages.scrollTop = chatMessages.scrollHeight;
+      
+      // Enable the export to Google Calendar button
+      const exportButton = document.getElementById('exportToGoogleBtn');
+      if (exportButton) {
+        exportButton.disabled = false;
+        exportButton.style.opacity = '1';
+        exportButton.style.cursor = 'pointer';
+        
+        // Add a quick highlight animation to draw attention to the export button
+        exportButton.style.transition = 'all 0.3s ease';
+        exportButton.style.transform = 'scale(1.1)';
+        exportButton.style.boxShadow = '0 0 10px rgba(15, 157, 88, 0.5)';
+        
+        setTimeout(() => {
+          exportButton.style.transform = 'scale(1)';
+          exportButton.style.boxShadow = 'none';
+        }, 1000);
+      }
+      
+      // Hide the chat interface after a short delay
+      setTimeout(() => {
+        const chatContainer = document.querySelector('.chat-container');
+        if (chatContainer) {
+          chatContainer.style.display = 'none';
+        }
+        
+        // Store a flag in localStorage to indicate chat is hidden and finalized
+        localStorage.setItem('chatHidden', 'true');
+        localStorage.setItem('chatFinalized', 'true');
+      }, 5000);  // Increased delay to 5 seconds so users can read the message
     })
     .catch(error => {
       console.error('Error finalizing chat:', error);
@@ -430,7 +478,28 @@
     });
   }
 
-  // Original functions
+  // Add event listener for page load to check if chat should be hidden
+  document.addEventListener('DOMContentLoaded', function() {
+    // Check if chat was previously hidden
+    const chatHidden = localStorage.getItem('chatHidden');
+    if (chatHidden === 'true') {
+      const chatContainer = document.querySelector('.chat-container');
+      if (chatContainer) {
+        chatContainer.style.display = 'none';
+      }
+    }
+    
+    // Check if chat was finalized to determine if export button should be enabled
+    const chatFinalized = localStorage.getItem('chatFinalized');
+    const exportButton = document.getElementById('exportToGoogleBtn');
+    if (exportButton && chatFinalized === 'true') {
+      exportButton.disabled = false;
+      exportButton.style.opacity = '1';
+      exportButton.style.cursor = 'pointer';
+    }
+  });
+  
+  // Override the resetScheduleUI function to show chat again after reset
   function resetScheduleUI() {
     if (confirm('Are you sure you want to reset your schedule? This cannot be undone.')) {
       const scheduleOutput = document.getElementById('scheduleOutput');
@@ -452,6 +521,10 @@
       })
       .then(data => {
         localStorage.removeItem('currentSchedule');
+        // Remove the chatHidden flag so chat will be shown on the new page
+        localStorage.removeItem('chatHidden');
+        // Remove the chatFinalized flag so export button will be disabled again
+        localStorage.removeItem('chatFinalized');
         window.location.href = '/';
       })
       .catch(error => {
@@ -492,5 +565,45 @@
       scheduleOutput.appendChild(errorDiv);
     });
   }
+
+  // Add this function to check if chat is finalized
+  function checkChatFinalized() {
+    const chatFinalized = localStorage.getItem('chatFinalized') === 'true';
+    const exportToGoogleBtn = document.getElementById('exportToGoogleBtn');
+    const exportTooltip = document.getElementById('exportTooltip');
+    
+    if (chatFinalized) {
+      exportToGoogleBtn.removeAttribute('disabled');
+      exportToGoogleBtn.style.opacity = '1';
+      exportToGoogleBtn.style.cursor = 'pointer';
+      if (exportTooltip) exportTooltip.style.display = 'none';
+    } else {
+      exportToGoogleBtn.setAttribute('disabled', 'disabled');
+      exportToGoogleBtn.style.opacity = '0.5';
+      exportToGoogleBtn.style.cursor = 'not-allowed';
+      if (exportTooltip) exportTooltip.style.display = 'block';
+    }
+  }
+  
+  // Run the check on page load
+  checkChatFinalized();
+  
+  // Show/hide tooltip on hover
+  document.addEventListener('DOMContentLoaded', function() {
+    const exportBtn = document.getElementById('exportToGoogleBtn');
+    const exportTooltip = document.getElementById('exportTooltip');
+    
+    if (exportBtn && exportTooltip) {
+      exportBtn.addEventListener('mouseover', function() {
+        if (this.disabled) {
+          exportTooltip.style.display = 'block';
+        }
+      });
+      
+      exportBtn.addEventListener('mouseout', function() {
+        exportTooltip.style.display = 'none';
+      });
+    }
+  });
 </script>
 {% endblock %}

@@ -568,7 +568,7 @@ CHAT HISTORY:
 {chat_history_text}
 ```
 
-Based on this chat history, please update ONLY the user-specific style instructions in the prompt. Keep all technical instructions, data structures, and fixed sections completely intact.
+Based on this chat history, please CREATE or UPDATE ONLY the user-specific style instructions in the prompt. Keep all technical instructions, data structures, and fixed sections completely intact.
 
 Look for patterns in how the user wants their schedule arranged based on their chat interactions with the scheduling assistant. Incorporate these preferences into the style section of the prompt.
 """

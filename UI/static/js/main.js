@@ -409,6 +409,9 @@ function generateOptimizedSchedule() {
         return response.json();
     })
     .then(data => {
+        // Reset the chat hidden flag so the chat interface will be visible
+        localStorage.removeItem('chatHidden');
+        
         // Redirect to the schedule-only view
         window.location.href = '/schedule-only';
     })

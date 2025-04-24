@@ -546,7 +546,7 @@ def generate_optimized_schedule():
                     'max_tokens': 4000,
                     'temperature': 0.2
                 },
-                timeout=60
+                timeout=350
             )
             
             if response.status_code != 200:
@@ -967,7 +967,10 @@ def get_prompt():
         # just return the default prompt for now. In a full implementation,
         # we would store user-specific prompts in a database and retrieve them here.
         # The UI should handle the custom_prompt field for the user.
-        default_prompt = get_schedule_prompt()
+        
+        # Create an empty schedule structure to pass to get_schedule_prompt
+        empty_schedule = {"meetings": [], "tasks": []}
+        default_prompt = get_schedule_prompt(schedule_data=empty_schedule)
         
         return jsonify({
             'status': 'success',

@@ -1,3 +1,5 @@
+
+
 """
 Schedule Generation Prompts and Helpers
 This module contains prompt templates and utility functions for LLM-based schedule generation.
@@ -202,8 +204,6 @@ Always schedule regular meal times for EVERY day of the week, including weekends
 Use the user's preferred meal times if specified in their preferences, otherwise use reasonable default times. Treat these as fixed appointments that should not have conflicting tasks. Make sure to include meals on all seven days of the week (Monday through Sunday).
 
 # PREPARATION SESSION PREFERENCES
-After scheduling all required meetings, tasks, and meals, analyze the schedule to identify events that would benefit from preparation sessions. Generate appropriate preparation events for:
-
 1. Exams and tests: Create study sessions leading up to exams, with increasing intensity as the exam approaches.
 2. Presentations and project demos: Add preparation time for rehearsal, material finalization, and slide creation.
 3. Assignment deadlines: Include sessions for planning, research, drafting, and review before deadlines.
