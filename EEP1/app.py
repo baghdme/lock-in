@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from copy import deepcopy
 import logging
 from prompts import PARSING_PROMPT
-from helpers import save_schedule, load_schedule, convert_to_24h, validate_and_fix_times, check_missing_info, clean_missing_info_from_tasks, clean_schedule, convert_answer_value, update_schedule_with_answers, ensure_ids, STORAGE_PATH, FINAL_PATH, reset_schedules
+from helpers import save_schedule, load_schedule, convert_to_24h, validate_and_fix_times, check_missing_info, clean_missing_info_from_tasks, clean_schedule, convert_answer_value, update_schedule_with_answers, ensure_ids, reset_schedules
 import uuid
 from schedule_prompts import get_schedule_prompt, get_response_parsing_prompt
 
@@ -25,8 +25,12 @@ CORS(app)  # Enable CORS for all routes
 # Service URLs
 IEP1_URL = os.getenv('IEP1_URL', 'http://localhost:5001')
 IEP2_URL = os.getenv('IEP2_URL', 'http://localhost:5004')
+IEP3_URL = os.getenv('IEP3_URL', 'http://localhost:5003')
+IEP4_URL = os.getenv('IEP4_URL', 'http://localhost:5005')
 logger.debug(f"Using IEP1_URL: {IEP1_URL}")
 logger.debug(f"Using IEP2_URL: {IEP2_URL}")
+logger.debug(f"Using IEP3_URL: {IEP3_URL}")
+logger.debug(f"Using IEP4_URL: {IEP4_URL}")
 
 # -------------------------------
 # Parsing and Storage Endpoints
@@ -127,7 +131,7 @@ def store_schedule_endpoint():
 @app.route('/get-schedule', methods=['GET'])
 def get_schedule():
     try:
-        schedule = load_schedule(FINAL_PATH)
+        schedule = load_schedule(is_final=True)
         if not schedule:
             return jsonify({'error': 'No schedule found'}), 404
             
@@ -483,7 +487,7 @@ def parse_schedule_llm_response():
         }
         
         # Save the final schedule
-        save_schedule(schedule_out, FINAL_PATH)
+        save_schedule(schedule_out, is_final=True)
         
         return jsonify(result)
         
@@ -504,7 +508,8 @@ def generate_optimized_schedule():
             
         schedule = data['schedule']
         preferences = data.get('preferences', None)
-        imported_calendar = data.get('imported_calendar', None)
+        google_calendar = data.get('google_calendar', None)
+        custom_prompt = data.get('custom_prompt', None)
             
         # Validate the schedule
         questions = check_missing_info(schedule)
@@ -517,15 +522,21 @@ def generate_optimized_schedule():
         cleaned_schedule = clean_schedule(schedule)
         logger.info("Preparing to generate schedule...")
         
-        # Log whether we have an imported calendar
-        if imported_calendar:
-            logger.info("Using imported calendar from request")
+        # Log whether we have a Google Calendar
+        if google_calendar:
+            logger.info("Using Google Calendar data from request")
         else:
-            logger.info("No imported calendar provided in request")
+            logger.info("No Google Calendar data provided in request")
         
         try:
-            # Generate the prompt using our helper function
-            prompt = get_schedule_prompt(cleaned_schedule, preferences, imported_calendar)
+            # Check if custom prompt is available
+            if custom_prompt:
+                logger.info("Using custom prompt from request")
+                prompt = custom_prompt
+            else:
+                # Generate the prompt using our helper function
+                logger.info("Using default prompt template")
+                prompt = get_schedule_prompt(cleaned_schedule, preferences, google_calendar)
             
             # Call IEP2 to get the LLM response
             response = requests.post(
@@ -535,7 +546,7 @@ def generate_optimized_schedule():
                     'max_tokens': 4000,
                     'temperature': 0.2
                 },
-                timeout=60
+                timeout=350
             )
             
             if response.status_code != 200:
@@ -613,12 +624,12 @@ def generate_optimized_schedule():
             if preferences:
                 final_schedule['preferences'] = preferences
             
-            # Include a reference to the imported calendar if it was used
-            if imported_calendar:
-                final_schedule['used_imported_calendar'] = True
+            # Include a reference to the Google Calendar if it was used
+            if google_calendar:
+                final_schedule['used_google_calendar'] = True
             
             # Save the final schedule
-            save_schedule(final_schedule, path=FINAL_PATH)
+            save_schedule(final_schedule, is_final=True)
             
             return jsonify(final_schedule)
             
@@ -631,6 +642,163 @@ def generate_optimized_schedule():
         return jsonify({'error': str(e)}), 500
 
 # -------------------------------
+# Google Calendar Integration Endpoints
+# -------------------------------
+@app.route('/google-calendar/authorize', methods=['GET'])
+def google_calendar_authorize():
+    """Initiate Google Calendar authorization by redirecting to IEP3."""
+    try:
+        # Get redirect URI from request
+        redirect_uri = request.args.get('redirect_uri')
+        if not redirect_uri:
+            return jsonify({'error': 'Missing redirect_uri parameter'}), 400
+        
+        # Forward the request to IEP3
+        response = requests.get(
+            f"{IEP3_URL}/authorize",
+            params={'redirect_uri': redirect_uri},
+            timeout=10
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Error from IEP3: {response.text}")
+            return jsonify({'error': f'Error from IEP3: {response.text}'}), response.status_code
+        
+        # Return the authorization URL
+        return jsonify(response.json())
+    except Exception as e:
+        logger.error(f"Error in Google Calendar authorization: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/google-calendar/callback', methods=['POST'])
+def google_calendar_callback():
+    """Handle the OAuth callback and exchange the code for tokens."""
+    try:
+        data = request.get_json()
+        if not data or 'code' not in data:
+            return jsonify({'error': 'Code is required'}), 400
+        
+        # Forward the request to IEP3
+        response = requests.post(
+            f"{IEP3_URL}/callback",
+            json=data,
+            timeout=10
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Error from IEP3: {response.text}")
+            return jsonify({'error': f'Error from IEP3: {response.text}'}), response.status_code
+        
+        # Return the credentials
+        return jsonify(response.json())
+    except Exception as e:
+        logger.error(f"Error in Google Calendar callback: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/google-calendar/fetch', methods=['POST'])
+def google_calendar_fetch():
+    """Fetch the user's Google Calendar events."""
+    try:
+        data = request.get_json()
+        if not data or 'credentials' not in data:
+            return jsonify({'error': 'Credentials are required'}), 400
+        
+        # Forward the request to IEP3, but ensure we're only fetching current week
+        request_data = {
+            'credentials': data['credentials']
+        }
+        
+        # Forward request to IEP3
+        response = requests.post(
+            f"{IEP3_URL}/fetch-calendar",
+            json=request_data,
+            timeout=30
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Error from IEP3: {response.text}")
+            return jsonify({'error': f'Error from IEP3: {response.text}'}), response.status_code
+        
+        # Return the calendar data
+        return jsonify(response.json())
+    except Exception as e:
+        logger.error(f"Error fetching Google Calendar: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/google-calendar/export-schedule', methods=['POST'])
+def export_schedule_to_google():
+    """Export the optimized schedule to Google Calendar."""
+    try:
+        data = request.get_json()
+        if not data or 'credentials' not in data or 'schedule' not in data:
+            return jsonify({'error': 'Both Google credentials and schedule are required'}), 400
+        
+        schedule = data['schedule']
+        credentials = data['credentials']
+        
+        # Check if we have a valid schedule with a generated_calendar
+        if not schedule or 'generated_calendar' not in schedule:
+            return jsonify({'error': 'No valid schedule to export'}), 400
+        
+        # Get imported Google Calendar events if available
+        google_event_ids = set()
+        if 'imported_events' in data:
+            for day_events in data['imported_events'].values():
+                for event in day_events:
+                    if event.get('id'):
+                        google_event_ids.add(event.get('id'))
+        
+        # Process each day in the generated calendar
+        events_to_create = []
+        for day, day_events in schedule['generated_calendar'].items():
+            for event in day_events:
+                # Skip events that originated from Google Calendar
+                if event.get('type') == 'google_event' or event.get('id') in google_event_ids:
+                    logger.info(f"Skipping event from Google Calendar: {event.get('description')}")
+                    continue
+                
+                # Skip meal events if requested
+                if data.get('skip_meals', False) and event.get('type') == 'meal':
+                    logger.info(f"Skipping meal event: {event.get('description')}")
+                    continue
+                
+                # Add day information to the event
+                event_with_day = event.copy()
+                event_with_day['day'] = day
+                
+                # Add to list of events to create
+                events_to_create.append(event_with_day)
+        
+        # If no events to create, return early
+        if not events_to_create:
+            return jsonify({
+                'success': True,
+                'message': 'No new events to export to Google Calendar',
+                'created': 0
+            })
+        
+        # Send the events to IEP3 for creation
+        response = requests.post(
+            f"{IEP3_URL}/create-events",
+            json={
+                'credentials': credentials,
+                'events': events_to_create
+            },
+            timeout=60  # Longer timeout as creating multiple events can take time
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Error from IEP3 when creating events: {response.text}")
+            return jsonify({'error': f'Error creating events in Google Calendar: {response.text}'}), response.status_code
+        
+        # Return the response from IEP3
+        return jsonify(response.json())
+        
+    except Exception as e:
+        logger.error(f"Error exporting schedule to Google Calendar: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# -------------------------------
 # Health Endpoint
 # -------------------------------
 @app.route('/health', methods=['GET'])
@@ -638,12 +806,21 @@ def health():
     try:
         iep1_response = requests.get(f"{IEP1_URL}/health")
         iep1_status = iep1_response.status_code == 200
+        
+        # Check IEP3 health too
+        try:
+            iep3_response = requests.get(f"{IEP3_URL}/health")
+            iep3_status = iep3_response.status_code == 200
+        except:
+            iep3_status = False
+        
         return jsonify({
-            "status": "healthy" if iep1_status else "unhealthy",
+            "status": "healthy" if (iep1_status and iep3_status) else "partially healthy",
             "services": {
-                "iep1": "healthy" if iep1_status else "unhealthy"
+                "iep1": "healthy" if iep1_status else "unhealthy",
+                "iep3": "healthy" if iep3_status else "unhealthy"
             }
-        }), 200 if iep1_status else 500
+        }), 200 if (iep1_status and iep3_status) else 500
     except Exception as e:
         return jsonify({
             "status": "unhealthy",
@@ -664,6 +841,145 @@ def reset_stored_schedule():
     except Exception as e:
         logger.error("Error resetting stored schedule:", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+# -------------------------------
+# IEP4 Chat and Prompt Integration
+# -------------------------------
+@app.route('/chat', methods=['POST'])
+def handle_chat():
+    """Handle chat messages and update schedule through IEP4."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        # Extract the message and user ID
+        message = data.get('message')
+        user_id = data.get('user_id')
+        
+        if not message:
+            return jsonify({'error': 'No message provided'}), 400
+        if not user_id:
+            return jsonify({'error': 'No user ID provided'}), 400
+            
+        # Get the current schedule
+        schedule = load_schedule(is_final=True)
+        if not schedule:
+            return jsonify({'error': 'No schedule found'}), 404
+            
+        # Get chat history if provided
+        chat_history = data.get('chat_history', [])
+        
+        # Prepare data for IEP4
+        iep4_data = {
+            'message': message,
+            'schedule': schedule,
+            'chat_history': chat_history
+        }
+        
+        # Send to IEP4
+        try:
+            response = requests.post(
+                f"{IEP4_URL}/chat",
+                json=iep4_data,
+                timeout=300  # Increased timeout to 300 seconds (5 minutes)
+            )
+            response.raise_for_status()
+            
+            # Get the response
+            response_data = response.json()
+            
+            # Extract updated schedule and save it
+            if 'schedule' in response_data:
+                updated_schedule = response_data['schedule']
+                save_schedule(updated_schedule)
+                
+            return jsonify(response_data)
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error communicating with IEP4: {str(e)}")
+            return jsonify({'error': f'Error communicating with IEP4: {str(e)}'}), 500
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in chat handler: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/update-prompt', methods=['POST'])
+def update_prompt():
+    """Update user's custom prompt based on chat history."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        # Extract the original prompt, chat history and user ID
+        original_prompt = data.get('original_prompt')
+        chat_history = data.get('chat_history', [])
+        user_id = data.get('user_id')
+        
+        if not original_prompt:
+            return jsonify({'error': 'No original prompt provided'}), 400
+        if not user_id:
+            return jsonify({'error': 'No user ID provided'}), 400
+            
+        # Prepare data for IEP4
+        iep4_data = {
+            'original_prompt': original_prompt,
+            'chat_history': chat_history
+        }
+        
+        # Send to IEP4
+        try:
+            response = requests.post(
+                f"{IEP4_URL}/update-prompt",
+                json=iep4_data,
+                timeout=300
+            )
+            response.raise_for_status()
+            
+            # Get the response
+            response_data = response.json()
+            
+            return jsonify(response_data)
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error communicating with IEP4: {str(e)}")
+            return jsonify({'error': f'Error communicating with IEP4: {str(e)}'}), 500
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in prompt update: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get-prompt', methods=['GET'])
+def get_prompt():
+    """Get the current prompt template for schedule generation."""
+    try:
+        # Get the user ID from the request
+        user_id = request.args.get('user_id')
+        
+        if not user_id:
+            return jsonify({'error': 'No user ID provided'}), 400
+            
+        # Get request origin and UI URL from the request headers
+        origin = request.headers.get('Origin', '')
+        
+        # If we're being called from outside the app (i.e., from the UI),
+        # just return the default prompt for now. In a full implementation,
+        # we would store user-specific prompts in a database and retrieve them here.
+        # The UI should handle the custom_prompt field for the user.
+        
+        # Create an empty schedule structure to pass to get_schedule_prompt
+        empty_schedule = {"meetings": [], "tasks": []}
+        default_prompt = get_schedule_prompt(schedule_data=empty_schedule)
+        
+        return jsonify({
+            'status': 'success',
+            'prompt': default_prompt
+        })
+        
+    except Exception as e:
+        logger.error(f"Unexpected error fetching prompt: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True) 

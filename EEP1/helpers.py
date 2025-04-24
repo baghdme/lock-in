@@ -9,21 +9,17 @@ import logging
 # ===============================
 # (Ensure that all import statements and constant definitions are below this header)
 
-# Define storage paths - keeping these for backward compatibility
-STORAGE_PATH = os.path.join(os.path.dirname(__file__), 'storage', 'latest_schedule.json')
-FINAL_PATH = os.path.join(os.path.dirname(__file__), 'storage', 'final_schedule.json')
-
 # In-memory storage for schedules
 _CURRENT_SCHEDULE = None
 _FINAL_SCHEDULE = None
 
 # ===============================
-# File I/O Operations
+# Schedule Storage Operations
 # ===============================
 
 # Functions for saving and loading schedules
 
-def save_schedule(schedule, path=STORAGE_PATH):
+def save_schedule(schedule, is_final=False):
     """Save the schedule to in-memory storage."""
     global _CURRENT_SCHEDULE, _FINAL_SCHEDULE
     
@@ -32,7 +28,7 @@ def save_schedule(schedule, path=STORAGE_PATH):
         schedule = ensure_ids(schedule)
         
         # Store in the appropriate in-memory variable
-        if path == FINAL_PATH:
+        if is_final:
             _FINAL_SCHEDULE = schedule
         else:
             _CURRENT_SCHEDULE = schedule
@@ -42,13 +38,13 @@ def save_schedule(schedule, path=STORAGE_PATH):
         raise Exception(f"Error saving schedule: {str(e)}")
 
 
-def load_schedule(path=STORAGE_PATH):
+def load_schedule(is_final=False):
     """Load the schedule from in-memory storage."""
     global _CURRENT_SCHEDULE, _FINAL_SCHEDULE
     
     try:
         # Return the appropriate in-memory schedule
-        if path == FINAL_PATH:
+        if is_final:
             if _FINAL_SCHEDULE is None:
                 return {"meetings": [], "tasks": [], "course_codes": []}
             return _FINAL_SCHEDULE

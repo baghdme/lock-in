@@ -23,5 +23,5 @@ ENV STORAGE_DIR=/app/storage
 # Expose port 5000
 EXPOSE 5000
 
-# Run the application using gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"] 
+# Run the application using gunicorn with 350 second timeout
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--timeout", "350", "app:app"] 

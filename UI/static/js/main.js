@@ -371,62 +371,10 @@ function generateSchedule() {
     }, 1000);
 }
 
-// Functions for calendar import
-function showImportDialog() {
-    document.getElementById('importDialog').classList.remove('hidden');
-}
-
-function closeImportDialog() {
-    document.getElementById('importDialog').classList.add('hidden');
-    // Reset the file input
-    document.getElementById('calendarFile').value = '';
-}
-
-function uploadCalendar() {
-    const fileInput = document.getElementById('calendarFile');
-    if (!fileInput.files.length) {
-        alert('Please select a JSON file to upload');
-        return;
-    }
-    
-    // Create a FormData object to send the file
-    const formData = new FormData();
-    formData.append('calendar_file', fileInput.files[0]);
-    
-    // Disable the upload button
-    const uploadBtn = document.querySelector('#importDialog button[onclick="uploadCalendar()"]');
-    uploadBtn.disabled = true;
-    uploadBtn.innerText = 'Uploading...';
-    
-    // Send the file to the server
-    fetch('/import-calendar', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                throw new Error(data.error || 'Failed to import calendar');
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        alert(data.message || 'Calendar imported successfully');
-        closeImportDialog();
-        
-        // Remove automatic schedule generation - just show success message
-        document.getElementById('scheduleOutput').innerHTML = '<div class="info-message">Calendar imported successfully. Enter schedule details and process them, or start with a new schedule from scratch.</div>';
-    })
-    .catch(error => {
-        console.error('Error importing calendar:', error);
-        alert(`Error importing calendar: ${error.message}`);
-    })
-    .finally(() => {
-        // Re-enable the upload button
-        uploadBtn.disabled = false;
-        uploadBtn.innerText = 'Upload';
-    });
+// Function to handle Google Calendar import
+function importGoogleCalendar() {
+    // Redirect to the Google Calendar authorization route
+    window.location.href = '/google-calendar/authorize';
 }
 
 // Update generateOptimizedSchedule function
@@ -461,6 +409,9 @@ function generateOptimizedSchedule() {
         return response.json();
     })
     .then(data => {
+        // Reset the chat hidden flag so the chat interface will be visible
+        localStorage.removeItem('chatHidden');
+        
         // Redirect to the schedule-only view
         window.location.href = '/schedule-only';
     })
@@ -592,12 +543,28 @@ function displayFormattedSchedule(schedule) {
         // Get simplified event description
         const simpleDescription = getSimpleEventType(ev);
         
+        // Calculate the duration in minutes
+        const durationInMinutes = ((eh - sh) * 60 + (em - sm));
+        
+        // Use different HTML template for short events (less than 35 minutes)
+        let contentHTML;
+        if (durationInMinutes <= 35) {
+          // Compact layout for short events - combine title and description in one line
+          contentHTML = `
+            <div class="short-event">
+              <strong>${simpleDescription}, ${startLabel}</strong>
+            </div>`;
+        } else {
+          // Normal layout for longer events
+          contentHTML = `
+            <div><strong>${title}</strong></div>
+            <div>${simpleDescription}</div>
+            ${ev.course_code ? `<div class="course-code">${ev.course_code}</div>` : ''}
+          `;
+        }
+        
         // Build the HTML content
-        eventElement.innerHTML = `
-          <div><strong>${title}</strong></div>
-          <div>${simpleDescription}</div>
-          ${ev.course_code ? `<div class="course-code">${ev.course_code}</div>` : ''}
-        `;
+        eventElement.innerHTML = contentHTML;
         
         // Add to container first (needed to calculate positions correctly)
         container.appendChild(eventElement);
@@ -642,7 +609,7 @@ function displayFormattedSchedule(schedule) {
           width: ${cellWidth - 4}px !important;
           box-sizing: border-box !important;
           margin: 0 !important;
-          padding: 10px 12px !important;
+          padding: ${durationInMinutes <= 35 ? '4px 8px' : '10px 12px'} !important;
           z-index: 10 !important;
           transition: none !important;
           transform: none !important;
@@ -681,6 +648,17 @@ function displayFormattedSchedule(schedule) {
         box-sizing: border-box !important;
         overflow: hidden !important;
         min-height: 0 !important; /* Remove min-height constraint */
+      }
+      /* Short event styling */
+      .calendar-container .event-block .short-event {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.2;
+      }
+      .calendar-container .event-block .short-event strong {
+        margin-bottom: 0;
+        font-size: 0.85rem;
       }
       /* Coloring for different event types */
       .calendar-container .event-block {
